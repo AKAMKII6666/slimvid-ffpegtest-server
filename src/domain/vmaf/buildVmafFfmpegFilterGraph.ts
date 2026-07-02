@@ -129,12 +129,21 @@ export function buildVmafFfmpegFilterGraph(input: IBuildVmafFfmpegFilterGraphInp
 	);
 }
 
+/**
+ * libvmaf log_path 在 ffmpeg -lavfi 中的转义。
+ * Windows 须先将反斜杠规范为 /，再仅对冒号转义（盘符 C:）；勿对 \ 双重转义。
+ */
+export function escapeLibvmafFfmpegLogPath(logPath: string): string {
+	const normalized = logPath.trim().replace(/\\/g, "/");
+	return normalized.replace(/:/g, "\\:");
+}
+
 export function buildVmafFfmpegFullFilter(
 	input: IBuildVmafFfmpegFilterGraphInput,
 	logPath: string,
 	vmafModel: string,
 ): string {
 	const base = buildVmafFfmpegFilterGraph(input);
-	const escapedLogPath = logPath.replace(/\\/g, "\\\\").replace(/:/g, "\\:");
+	const escapedLogPath = escapeLibvmafFfmpegLogPath(logPath);
 	return base + "=model=version=" + vmafModel + ":log_fmt=json:log_path=" + escapedLogPath;
 }

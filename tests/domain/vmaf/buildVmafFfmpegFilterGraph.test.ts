@@ -4,6 +4,7 @@ import { PROBE_WORKER_DEFAULT_CONFIG } from "@worker/config/defaults.js";
 import {
 	buildVmafFfmpegFilterGraph,
 	buildVmafFfmpegFullFilter,
+	escapeLibvmafFfmpegLogPath,
 	VMAF_FFMPEG_FILTER_CUDA,
 	VMAF_FFMPEG_FILTER_CPU,
 } from "@worker/domain/vmaf/buildVmafFfmpegFilterGraph.js";
@@ -58,6 +59,27 @@ describe("buildVmafFfmpegFilterGraph", function () {
 		);
 
 		expect(full).toContain("=model=version=vmaf_v0.6.1:log_fmt=json:log_path=/tmp/vmaf.json");
+	});
+
+	it("escapes Windows log_path with forward slashes and drive colon only", function () {
+		const windowsPath =
+			"C:\\Users\\bobliao\\AppData\\Local\\Temp\\slimvid-vmaf-75697a09-0dac-4e32-8c72-78d92ba68058.json";
+
+		expect(escapeLibvmafFfmpegLogPath(windowsPath)).toBe(
+			"C\\:/Users/bobliao/AppData/Local/Temp/slimvid-vmaf-75697a09-0dac-4e32-8c72-78d92ba68058.json",
+		);
+
+		const full = buildVmafFfmpegFullFilter(
+			{ mode: "delivery", deliveryWidth: 270, deliveryHeight: 480, executionMode: "cpu" },
+			windowsPath,
+			"vmaf_v0.6.1",
+		);
+
+		expect(full).toContain(
+			"log_path=C\\:/Users/bobliao/AppData/Local/Temp/slimvid-vmaf-75697a09-0dac-4e32-8c72-78d92ba68058.json",
+		);
+		expect(full).not.toContain("C\\\\:");
+		expect(full).not.toContain("\\\\Users");
 	});
 });
 
