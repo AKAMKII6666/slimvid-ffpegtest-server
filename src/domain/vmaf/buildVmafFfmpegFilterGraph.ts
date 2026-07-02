@@ -73,12 +73,12 @@ function buildDeliveryReferenceScaleChain(
 	return "scale=" + String(width) + ":" + String(height) + ":flags=bicubic";
 }
 
-function buildDistortedPrepChain(executionMode: TVmafExecutionMode): string {
+function buildDistortedDeliveryChain(executionMode: TVmafExecutionMode): string {
 	if (executionMode === "cuda") {
-		return "scale_cuda=format=yuv420p,";
+		return "[0:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS[dist];";
 	}
 
-	return "";
+	return "[0:v]setpts=PTS-STARTPTS[dist];";
 }
 
 export function buildVmafFfmpegFilterGraph(input: IBuildVmafFfmpegFilterGraphInput): string {
@@ -115,15 +115,13 @@ export function buildVmafFfmpegFilterGraph(input: IBuildVmafFfmpegFilterGraphInp
 	}
 
 	const refScale = buildDeliveryReferenceScaleChain(executionMode, deliveryWidth, deliveryHeight);
-	const distPrep = buildDistortedPrepChain(executionMode);
+	const distChain = buildDistortedDeliveryChain(executionMode);
 
 	return (
 		"[1:v]" +
 		refScale +
 		",setpts=PTS-STARTPTS[ref];" +
-		"[0:v]" +
-		distPrep +
-		",setpts=PTS-STARTPTS[dist];" +
+		distChain +
 		"[dist][ref]" +
 		vmafFilter
 	);

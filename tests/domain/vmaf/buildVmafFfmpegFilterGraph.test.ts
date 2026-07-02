@@ -22,6 +22,8 @@ describe("buildVmafFfmpegFilterGraph", function () {
 		});
 
 		expect(graph).toContain("scale=1280:720:flags=bicubic");
+		expect(graph).toContain("[0:v]setpts=PTS-STARTPTS[dist]");
+		expect(graph).not.toContain("[0:v],setpts");
 		expect(graph).toContain("[dist][ref]" + VMAF_FFMPEG_FILTER_CPU);
 		expect(graph).not.toContain("libvmaf_cuda");
 	});
@@ -35,7 +37,8 @@ describe("buildVmafFfmpegFilterGraph", function () {
 		});
 
 		expect(graph).toContain("scale_cuda=1280:720:format=yuv420p");
-		expect(graph).toContain("scale_cuda=format=yuv420p");
+		expect(graph).toContain("[0:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS[dist]");
+		expect(graph).not.toContain("[0:v],setpts");
 		expect(graph).toContain("[dist][ref]" + VMAF_FFMPEG_FILTER_CUDA);
 	});
 
