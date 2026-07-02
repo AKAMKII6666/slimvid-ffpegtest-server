@@ -31,7 +31,9 @@ interface IVmafFfmpegJsonAnalyticsPayload {
 }
 
 export const VMAF_FRAME_ANALYTICS_METHOD_NOTE =
-	"Per-frame VMAF merged into contiguous segments per threshold (90/75/50). segmentCount = number of segments; totalDurationSec = sum of segment durations. Screenshots only for sub-75 segments, one sample at the segment minimum-VMAF frame (reference + distorted on R2).";
+	"Per-frame VMAF at reference resolution (distorted upscaled, bicubic). Segments merged at thresholds 90/75/50. " +
+	"segmentCount = number of segments; totalDurationSec = sum of segment durations. " +
+	"Screenshots only for sub-75 segments, one sample at the segment minimum-VMAF frame (reference + distorted on R2).";
 
 export function extractVmafFrameScoresFromFfmpegJson(jsonText: string): IVmafFrameScoreInput[] {
 	const trimmed = jsonText.trim();

@@ -28,8 +28,8 @@ export function buildStubVmafReport(
 				candidateUrl: candidate.url,
 				deliveryWidth: candidate.width || 1280,
 				deliveryHeight: candidate.height || 720,
-				vmafAtDelivery: 95.5,
-				vmafAtDisplay1080p: 94.2,
+				vmafMean: 95.5,
+				vmafHarmonicMean: 94.2,
 				skipped: false,
 			};
 		}),

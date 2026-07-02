@@ -4,7 +4,7 @@
  */
 
 import type { IProbeWorkerR2Config } from "../../config/probeWorkerConfig.types.js";
-import type { TVmafFfmpegMode } from "../vmaf/buildVmafFfmpegFilterGraph.js";
+import type { TVmafProbeScreenshotMode } from "../vmaf/buildVmafFfmpegFilterGraph.js";
 
 export const VMAF_PROBE_SCREENSHOT_KEY_SEGMENT = "dev-vmaf-probe";
 
@@ -21,7 +21,7 @@ export interface IBuildVmafProbeScreenshotObjectKeyParams {
 	r2Config: IProbeWorkerR2Config;
 	shopDomain: string;
 	jobId: string;
-	vmafMode: TVmafFfmpegMode;
+	vmafMode: TVmafProbeScreenshotMode;
 	candidateLabel: string;
 	role: "reference" | "distorted";
 	segmentIndex: number;

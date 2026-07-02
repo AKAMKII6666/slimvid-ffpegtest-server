@@ -69,4 +69,20 @@ describe("parseProbeComputeJobCreateBody", function () {
 			expect(result.code).toBe("invalid_url_scheme");
 		}
 	});
+
+	it("rejects invalid vmafModel in vmaf options", function () {
+		const result = parseProbeComputeJobCreateBody({
+			...VALID_VMAF_JOB_BODY,
+			vmaf: {
+				...VALID_VMAF_JOB_BODY.vmaf,
+				options: {
+					vmafModel: "vmaf_v0.6.1:log_path=/tmp/evil",
+				},
+			},
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.code).toBe("invalid_body");
+		}
+	});
 });

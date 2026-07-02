@@ -27,14 +27,17 @@ alwaysApply: false
 
 ## libvmaf
 
-- delivery / display1080p 两种 mode；filter graph 见主 app `buildDevVideoVmafFfmpegFilterGraph.server.ts`。
+- **metadata2go 对齐口径**：distorted upscale @ reference 编码分辨率（bicubic + setpts）；见 `buildVmafFfmpegFilterGraph.ts` `metadata2goBicubicUpscale`。
+- CPU：`libvmaf`；GPU 请求时 `libvmaf_cuda` + `scale_cuda` upscale 链（见 [configuration.md](../../docs/AI与人类/configuration.md)）。
+- 每 candidate **单次** ffmpeg（不再跑 delivery + display1080p 双 mode）。
 - 单次 ffmpeg 超时（主 app 参考 600s）；stderr 累积上限防内存膨胀。
-- `log_fmt=json` 同时产出 mean 与逐帧 analytics（无额外 libvmaf 遍数）。
+- `log_fmt=json` 同时产出 mean、harmonic_mean 与逐帧 analytics。
+- `options.vmafModel` 仅允许 `vmaf_v*` 白名单（防滤镜注入）。
 
 ## Cancel
 
 - cancel 须：abort 在途下载 + SIGKILL 已登记 ffmpeg 子进程。
-- cancel 中途若已有 delivery/display 分数，partial row 保留，不写误导性 `vmaf_failed`。
+- cancel 中途若已有 vmafMean / vmafHarmonicMean，partial row 保留，不写误导性 `vmaf_failed`。
 
 ## 并发
 

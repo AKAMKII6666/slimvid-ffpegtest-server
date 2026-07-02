@@ -84,7 +84,7 @@ describe("runVmafPhaseForJob", function () {
 
 		expect(report?.rows).toHaveLength(2);
 		expect(report?.rows[0].skipped).toBe(false);
-		expect(report?.rows[0].vmafAtDelivery).toBe(96);
+		expect(report?.rows[0].vmafMean).toBe(96);
 
 		const snapshot = getProbeComputeJobSnapshot(
 			TEST_JOB_ID,
@@ -194,8 +194,8 @@ describe("runVmafPhaseForJob", function () {
 		);
 
 		expect(report?.rows).toHaveLength(1);
-		const deliveryAnalytics = report?.rows[0].vmafFrameAnalytics?.delivery;
-		expect(deliveryAnalytics?.thresholds[75].segments[0].screenshots).toBeUndefined();
-		expect(deliveryAnalytics?.screenshotsSkippedReason).toBeNull();
+		const rowFrameAnalytics = report?.rows[0].vmafFrameAnalytics;
+		expect(rowFrameAnalytics?.thresholds[75].segments[0].screenshots).toBeUndefined();
+		expect(rowFrameAnalytics?.screenshotsSkippedReason).toBeNull();
 	});
 });

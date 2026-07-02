@@ -6,30 +6,24 @@ import {
 } from "@worker/domain/vmaf/buildVmafFfmpegFilterGraph.js";
 
 describe("buildVmafFfmpegFullFilter log_path", function () {
-	it("uses relative log filename without escaping", function () {
-		const fileName = "slimvid-vmaf-abc.json";
-		expect(escapeLibvmafFfmpegLogPath(fileName)).toBe(fileName);
+	it("escapes absolute unix paths in log_path", function () {
+		const escaped = escapeLibvmafFfmpegLogPath("/tmp/vmaf-out.json");
+		expect(escaped).toBe("/tmp/vmaf-out.json");
 
 		const full = buildVmafFfmpegFullFilter(
-			{ mode: "delivery", deliveryWidth: 640, deliveryHeight: 360, executionMode: "cpu" },
-			fileName,
+			{ mode: "metadata2goBicubicUpscale", referenceWidth: 640, referenceHeight: 360, executionMode: "cpu" },
+			"/tmp/vmaf-out.json",
 			"vmaf_v0.6.1",
 		);
-		expect(full).toContain("log_path=slimvid-vmaf-abc.json");
+		expect(full).toContain("log_path=/tmp/vmaf-out.json");
 	});
 
-	it("appends n_threads when configured", function () {
+	it("keeps relative log filename unescaped", function () {
 		const full = buildVmafFfmpegFullFilter(
-			{ mode: "display1080p", executionMode: "cpu" },
-			"out.json",
+			{ mode: "metadata2goBicubicUpscale", referenceWidth: 1920, referenceHeight: 1080, executionMode: "cpu" },
+			"slimvid-vmaf-test.json",
 			"vmaf_v0.6.1",
-			{ nThreads: 4 },
 		);
-		expect(full).toContain(":n_threads=4:");
-		expect(full).toContain("log_path=out.json");
-	});
-
-	it("still escapes absolute Unix paths", function () {
-		expect(escapeLibvmafFfmpegLogPath("/tmp/vmaf.json")).toBe("/tmp/vmaf.json");
+		expect(full).toContain("log_path=slimvid-vmaf-test.json");
 	});
 });

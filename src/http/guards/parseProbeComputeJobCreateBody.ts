@@ -4,6 +4,7 @@
  */
 
 import { assertHttpsJobUrls } from "./assertHttpsJobUrls.js";
+import { parseAllowedVmafModelOption } from "./parseAllowedVmafModelOption.js";
 import {
 	PROBE_COMPUTE_JOB_SCHEMA_VERSION,
 	type IProbeComputeCompareSpecInput,
@@ -150,8 +151,12 @@ function parseVmafSpec(raw: unknown): IProbeComputeVmafSpecInput | null {
 		if (!isRecord(raw.options)) {
 			return null;
 		}
+		const vmafModel = parseAllowedVmafModelOption(raw.options.vmafModel);
+		if (raw.options.vmafModel !== undefined && vmafModel === null) {
+			return null;
+		}
 		options = {
-			vmafModel: parseOptionalString(raw.options.vmafModel),
+			vmafModel: vmafModel === null ? undefined : vmafModel,
 			durationMismatchThresholdSec:
 				raw.options.durationMismatchThresholdSec === undefined
 					? undefined

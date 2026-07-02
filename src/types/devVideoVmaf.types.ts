@@ -59,12 +59,6 @@ export interface IDevVideoVmafFrameAnalytics {
 	screenshotsSkippedReason: string | null;
 }
 
-/** 单 candidate 各 mode 的逐帧分析 */
-export interface IDevVideoCompressCompareVmafRowFrameAnalyticsByMode {
-	delivery: IDevVideoVmafFrameAnalytics | null;
-	display1080p: IDevVideoVmafFrameAnalytics | null;
-}
-
 /** 单 candidate VMAF 结果 */
 export interface IDevVideoCompressCompareVmafRow {
 	candidateLabel: string;
@@ -72,11 +66,14 @@ export interface IDevVideoCompressCompareVmafRow {
 	candidateUrl: string;
 	deliveryWidth: number;
 	deliveryHeight: number;
-	vmafAtDelivery: number | null;
-	vmafAtDisplay1080p: number | null;
+	/** pooled_metrics.vmaf.mean（distorted upscale @ reference resolution） */
+	vmafMean: number | null;
+	/** pooled_metrics.vmaf.harmonic_mean */
+	vmafHarmonicMean: number | null;
 	skipped: boolean;
 	skipReason?: TDevVideoCompressCompareVmafSkipReason;
-	vmafFrameAnalytics?: IDevVideoCompressCompareVmafRowFrameAnalyticsByMode;
+	/** 逐帧 segment 统计（与主分列同一次 ffmpeg） */
+	vmafFrameAnalytics?: IDevVideoVmafFrameAnalytics | null;
 }
 
 /** VMAF 完整报告 */

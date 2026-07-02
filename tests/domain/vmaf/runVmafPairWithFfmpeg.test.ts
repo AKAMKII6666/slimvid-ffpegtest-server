@@ -11,7 +11,7 @@ afterEach(function (): void {
 });
 
 describe("runVmafPairWithFfmpeg", function () {
-	it("passes CUDA hwaccel args and libvmaf_cuda filter when execution mode is cuda", async function () {
+	it("passes CUDA hwaccel args and libvmaf_cuda upscale filter when execution mode is cuda", async function () {
 		let capturedArgs: string[] = [];
 
 		setRunVmafPairFfmpegSpawnerForTests(async function (
@@ -26,9 +26,8 @@ describe("runVmafPairWithFfmpeg", function () {
 			{
 				distortedFilePath: "/tmp/dist.mp4",
 				referenceFilePath: "/tmp/ref.mp4",
-				mode: "delivery",
-				deliveryWidth: 1280,
-				deliveryHeight: 720,
+				referenceWidth: 1280,
+				referenceHeight: 720,
 				vmafExecutionMode: "cuda",
 			},
 			{
@@ -53,7 +52,7 @@ describe("runVmafPairWithFfmpeg", function () {
 		expect(filter).toContain("scale_cuda=1280:720:format=yuv420p");
 	});
 
-	it("uses CPU libvmaf filter without hwaccel args by default", async function () {
+	it("uses CPU libvmaf upscale filter without hwaccel args by default", async function () {
 		let capturedArgs: string[] = [];
 
 		setRunVmafPairFfmpegSpawnerForTests(async function (
@@ -68,9 +67,8 @@ describe("runVmafPairWithFfmpeg", function () {
 			{
 				distortedFilePath: "/tmp/dist.mp4",
 				referenceFilePath: "/tmp/ref.mp4",
-				mode: "delivery",
-				deliveryWidth: 640,
-				deliveryHeight: 360,
+				referenceWidth: 640,
+				referenceHeight: 360,
 			},
 			PROBE_WORKER_DEFAULT_CONFIG,
 		);
@@ -80,6 +78,7 @@ describe("runVmafPairWithFfmpeg", function () {
 
 		const lavfiIndex = capturedArgs.indexOf("-lavfi");
 		const filter = lavfiIndex >= 0 ? capturedArgs[lavfiIndex + 1] : "";
+		expect(filter).toContain("[0:v]scale=640:360:flags=bicubic");
 		expect(filter).toContain("[dist][ref]libvmaf");
 		expect(filter).not.toContain("libvmaf_cuda");
 	});

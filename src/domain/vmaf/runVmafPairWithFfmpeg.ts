@@ -1,29 +1,26 @@
 /**
  * 模块名称：单次 VMAF ffmpeg 执行
- * 模块说明：本地 distorted + reference 文件跑 libvmaf；可注入 spawn 供单测。
+ * 模块说明：distorted upscale @ reference resolution；可注入 spawn 供单测。
  */
 
 import { readFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
 
 import type { IProbeWorkerEffectiveConfig } from "../../config/probeWorkerConfig.types.js";
 import type { TVmafExecutionMode } from "../ffmpeg/probeRuntimeCapabilities.js";
 import { createModuleLogger } from "../../logging/createModuleLogger.js";
 import { truncateLogText } from "../../logging/truncateLogText.helpers.js";
+import { buildVmafFfmpegFullFilter } from "./buildVmafFfmpegFilterGraph.js";
+import { prepareVmafFfmpegLogTarget } from "./prepareVmafFfmpegLogTarget.js";
 import {
-	buildVmafFfmpegFullFilter,
-	type TVmafFfmpegMode,
-} from "./buildVmafFfmpegFilterGraph.js";
-import {
-	prepareVmafFfmpegLogTarget,
-} from "./prepareVmafFfmpegLogTarget.js";
-import {
-	buildVmafFfmpegCudaGlobalArgs,
-	buildVmafFfmpegCudaPerInputArgs,
-} from "./buildVmafFfmpegHwaccelArgs.js";
-import { parseVmafFfmpegJsonMean } from "./parseVmafFfmpegJson.js";
+	parseVmafFfmpegJsonHarmonicMean,
+	parseVmafFfmpegJsonMean,
+} from "./parseVmafFfmpegJson.js";
 import { parseVmafFfmpegFrameAnalytics } from "./parseVmafFfmpegFrameAnalytics.js";
-import { registerVmafFfmpegProcess } from "../ffmpeg/vmafProcessRegistry.memory.js";
+import {
+	runVmafFfmpegWithFullFilter,
+	setRunVmafFfmpegWithFullFilterSpawnerForTests,
+	type TRunVmafFfmpegWithFullFilterSpawner,
+} from "./runVmafFfmpegWithFullFilter.js";
 import type { IDevVideoVmafFrameAnalytics } from "../../types/devVideoVmaf.types.js";
 
 const log = createModuleLogger({ module: "domain.vmaf.ffmpeg" });
@@ -33,9 +30,8 @@ export const DEFAULT_VMAF_MODEL_VERSION = "vmaf_v0.6.1";
 export interface IRunVmafPairWithFfmpegInput {
 	distortedFilePath: string;
 	referenceFilePath: string;
-	mode: TVmafFfmpegMode;
-	deliveryWidth?: number;
-	deliveryHeight?: number;
+	referenceWidth: number;
+	referenceHeight: number;
 	maxDurationSeconds?: number;
 	frameRateFps?: number;
 	jobId?: string;
@@ -56,25 +52,14 @@ export type TVmafFfmpegFailureReason =
 
 export interface IRunVmafPairWithFfmpegResult {
 	mean: number | null;
+	harmonicMean: number | null;
 	frameAnalytics: IDevVideoVmafFrameAnalytics | null;
-	/** ffmpeg 退出码；成功时为 0 */
 	ffmpegExitCode?: number | null;
-	/** stderr 摘要（截断） */
 	ffmpegStderrExcerpt?: string;
-	/** 失败原因 */
 	failureReason?: TVmafFfmpegFailureReason;
 }
 
-export type TRunVmafPairFfmpegSpawner = (
-	command: string,
-	args: string[],
-	options?: {
-		jobId?: string;
-		shouldAbort?: () => boolean;
-		timeoutMs?: number;
-		cwd?: string;
-	},
-) => Promise<{ exitCode: number; stderr: string }>;
+export type TRunVmafPairFfmpegSpawner = TRunVmafFfmpegWithFullFilterSpawner;
 
 function buildVmafFfmpegFailureResult(params: {
 	exitCode?: number | null;
@@ -91,7 +76,6 @@ function buildVmafFfmpegFailureResult(params: {
 		{
 			jobId: params.input.jobId,
 			phase: "vmaf_ffmpeg",
-			mode: params.input.mode,
 			vmafExecutionMode: params.input.vmafExecutionMode ?? "cpu",
 			ffmpegExitCode: params.exitCode ?? null,
 			failureReason: params.failureReason,
@@ -102,6 +86,7 @@ function buildVmafFfmpegFailureResult(params: {
 
 	return {
 		mean: null,
+		harmonicMean: null,
 		frameAnalytics: null,
 		ffmpegExitCode: params.exitCode ?? null,
 		ffmpegStderrExcerpt: stderrExcerpt,
@@ -109,71 +94,10 @@ function buildVmafFfmpegFailureResult(params: {
 	};
 }
 
-async function defaultRunVmafPairFfmpegSpawner(
-	command: string,
-	args: string[],
-	options?: {
-		jobId?: string;
-		shouldAbort?: () => boolean;
-		timeoutMs?: number;
-		cwd?: string;
-	},
-): Promise<{ exitCode: number; stderr: string }> {
-	if (options?.shouldAbort?.()) {
-		return { exitCode: 1, stderr: "aborted" };
-	}
-
-	return new Promise(function (resolve, reject): void {
-		const child = spawn(command, args, {
-			stdio: ["ignore", "ignore", "pipe"],
-			cwd: options?.cwd,
-		});
-
-		if (options?.jobId) {
-			registerVmafFfmpegProcess(options.jobId, child);
-		}
-
-		if (options?.shouldAbort?.()) {
-			child.kill("SIGKILL");
-		}
-
-		let stderr = "";
-		const timeoutMs = options?.timeoutMs ?? 600_000;
-		const timeoutId = setTimeout(function (): void {
-			child.kill("SIGKILL");
-		}, timeoutMs);
-
-		child.stderr.on("data", function (chunk: Buffer): void {
-			if (stderr.length >= 256 * 1024) {
-				return;
-			}
-			stderr += chunk.toString("utf8");
-			if (stderr.length > 256 * 1024) {
-				stderr = stderr.slice(0, 256 * 1024);
-			}
-		});
-
-		child.on("error", function (err: Error): void {
-			clearTimeout(timeoutId);
-			reject(err);
-		});
-
-		child.on("close", function (code: number | null): void {
-			clearTimeout(timeoutId);
-			resolve({
-				exitCode: code ?? 1,
-				stderr: stderr,
-			});
-		});
-	});
-}
-
-let runVmafPairFfmpegSpawnerOverride: TRunVmafPairFfmpegSpawner | null = null;
-
 export function setRunVmafPairFfmpegSpawnerForTests(
 	spawner: TRunVmafPairFfmpegSpawner | null,
 ): void {
-	runVmafPairFfmpegSpawnerOverride = spawner;
+	setRunVmafFfmpegWithFullFilterSpawnerForTests(spawner);
 }
 
 export async function runVmafPairWithFfmpeg(
@@ -197,9 +121,9 @@ export async function runVmafPairWithFfmpeg(
 
 	const filter = buildVmafFfmpegFullFilter(
 		{
-			mode: input.mode,
-			deliveryWidth: input.deliveryWidth,
-			deliveryHeight: input.deliveryHeight,
+			mode: "metadata2goBicubicUpscale",
+			referenceWidth: input.referenceWidth,
+			referenceHeight: input.referenceHeight,
 			executionMode: vmafExecutionMode,
 		},
 		logTarget.logPathForFilter,
@@ -207,52 +131,32 @@ export async function runVmafPairWithFfmpeg(
 		{ nThreads: nThreads },
 	);
 
-	const args: string[] = ["-hide_banner", "-loglevel", "error"];
-
-	if (vmafExecutionMode === "cuda") {
-		args.push(...buildVmafFfmpegCudaGlobalArgs(gpuDeviceId));
-	}
-
-	if (
-		typeof input.maxDurationSeconds === "number" &&
-		Number.isFinite(input.maxDurationSeconds) &&
-		input.maxDurationSeconds > 0
-	) {
-		args.push("-t", String(input.maxDurationSeconds));
-	}
-
-	if (vmafExecutionMode === "cuda") {
-		args.push(...buildVmafFfmpegCudaPerInputArgs(gpuDeviceId));
-	}
-	args.push("-i", input.distortedFilePath);
-
-	if (vmafExecutionMode === "cuda") {
-		args.push(...buildVmafFfmpegCudaPerInputArgs(gpuDeviceId));
-	}
-	args.push("-i", input.referenceFilePath);
-
-	args.push("-lavfi", filter, "-f", "null", "-");
-
 	log.info(
 		{
 			jobId: input.jobId,
 			phase: "vmaf_ffmpeg_start",
-			mode: input.mode,
 			vmafExecutionMode: vmafExecutionMode,
 			vmafModel: vmafModel,
+			referenceWidth: input.referenceWidth,
+			referenceHeight: input.referenceHeight,
 			maxDurationSeconds: input.maxDurationSeconds,
 		},
 		"vmaf ffmpeg start",
 	);
 
-	const spawner = runVmafPairFfmpegSpawnerOverride ?? defaultRunVmafPairFfmpegSpawner;
-
 	try {
-		const result = await spawner(ffmpegPath, args, {
+		const result = await runVmafFfmpegWithFullFilter({
+			distortedFilePath: input.distortedFilePath,
+			referenceFilePath: input.referenceFilePath,
+			fullFilter: filter,
+			maxDurationSeconds: input.maxDurationSeconds,
 			jobId: input.jobId,
 			shouldAbort: input.shouldAbort,
-			timeoutMs: ffmpegTimeoutMs,
-			cwd: logTarget.ffmpegCwd,
+			ffmpegCwd: logTarget.ffmpegCwd,
+			ffmpegPath: ffmpegPath,
+			ffmpegTimeoutMs: ffmpegTimeoutMs,
+			vmafExecutionMode: vmafExecutionMode,
+			gpuDeviceId: gpuDeviceId,
 		});
 		if (result.exitCode !== 0) {
 			return buildVmafFfmpegFailureResult({
@@ -277,6 +181,7 @@ export async function runVmafPairWithFfmpeg(
 		}
 
 		const mean = parseVmafFfmpegJsonMean(jsonText);
+		const harmonicMean = parseVmafFfmpegJsonHarmonicMean(jsonText);
 		let frameAnalytics: IDevVideoVmafFrameAnalytics | null = null;
 
 		if (
@@ -287,10 +192,10 @@ export async function runVmafPairWithFfmpeg(
 			frameAnalytics = parseVmafFfmpegFrameAnalytics(jsonText, input.frameRateFps);
 		}
 
-		if (mean === null) {
+		if (mean === null && harmonicMean === null) {
 			return buildVmafFfmpegFailureResult({
 				exitCode: 0,
-				stderr: "vmaf json log parsed empty mean",
+				stderr: "vmaf json log parsed empty mean and harmonic mean",
 				failureReason: "vmaf_log_parse_empty",
 				input: input,
 			});
@@ -300,15 +205,16 @@ export async function runVmafPairWithFfmpeg(
 			{
 				jobId: input.jobId,
 				phase: "vmaf_ffmpeg_done",
-				mode: input.mode,
 				vmafExecutionMode: vmafExecutionMode,
 				mean: mean,
+				harmonicMean: harmonicMean,
 			},
 			"vmaf ffmpeg done",
 		);
 
 		return {
 			mean: mean,
+			harmonicMean: harmonicMean,
 			frameAnalytics: frameAnalytics,
 			ffmpegExitCode: 0,
 		};

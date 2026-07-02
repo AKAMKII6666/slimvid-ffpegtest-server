@@ -34,7 +34,7 @@ import { createVmafAbortContext } from "../domain/vmaf/vmafAbortContext.helpers.
 import type {
 	IDevVideoCompressCompareVmafReport,
 	IDevVideoCompressCompareVmafRow,
-	IDevVideoCompressCompareVmafRowFrameAnalyticsByMode,
+	IDevVideoVmafFrameAnalytics,
 	TDevVideoCompressCompareVmafSkipReason,
 } from "../types/devVideoVmaf.types.js";
 import {
@@ -80,8 +80,8 @@ function buildSkippedVmafRow(
 		candidateUrl: candidate.url,
 		deliveryWidth: deliveryWidth,
 		deliveryHeight: deliveryHeight,
-		vmafAtDelivery: null,
-		vmafAtDisplay1080p: null,
+		vmafMean: null,
+		vmafHarmonicMean: null,
 		skipped: true,
 		skipReason: skipReason,
 	};
@@ -91,12 +91,11 @@ function buildVmafCandidateRow(params: {
 	candidate: IVmafCandidateDraft;
 	deliveryWidth: number;
 	deliveryHeight: number;
-	vmafAtDelivery: number | null;
-	vmafAtDisplay1080p: number | null;
-	deliveryVmafResult: IRunVmafPairWithFfmpegResult;
-	displayVmafResult: IRunVmafPairWithFfmpegResult;
+	vmafMean: number | null;
+	vmafHarmonicMean: number | null;
+	vmafResult: IRunVmafPairWithFfmpegResult;
 	includeFrameAnalytics: boolean;
-	vmafFrameAnalytics?: IDevVideoCompressCompareVmafRowFrameAnalyticsByMode;
+	vmafFrameAnalytics?: IDevVideoVmafFrameAnalytics | null;
 }): IDevVideoCompressCompareVmafRow {
 	const row: IDevVideoCompressCompareVmafRow = {
 		candidateLabel: params.candidate.label,
@@ -104,18 +103,15 @@ function buildVmafCandidateRow(params: {
 		candidateUrl: params.candidate.url,
 		deliveryWidth: params.deliveryWidth,
 		deliveryHeight: params.deliveryHeight,
-		vmafAtDelivery: params.vmafAtDelivery,
-		vmafAtDisplay1080p: params.vmafAtDisplay1080p,
+		vmafMean: params.vmafMean,
+		vmafHarmonicMean: params.vmafHarmonicMean,
 		skipped: false,
 	};
 
 	if (params.vmafFrameAnalytics) {
 		row.vmafFrameAnalytics = params.vmafFrameAnalytics;
 	} else if (params.includeFrameAnalytics) {
-		const frameAnalytics = buildVmafRowFrameAnalytics(
-			params.deliveryVmafResult,
-			params.displayVmafResult,
-		);
+		const frameAnalytics = buildVmafRowFrameAnalytics(params.vmafResult);
 		if (frameAnalytics) {
 			row.vmafFrameAnalytics = frameAnalytics;
 		}
@@ -131,69 +127,43 @@ async function resolveVmafRowFrameAnalytics(params: {
 	referenceLabel: string;
 	referenceFilePath: string;
 	distortedFilePath: string;
-	deliveryVmafResult: IRunVmafPairWithFfmpegResult;
-	displayVmafResult: IRunVmafPairWithFfmpegResult;
+	vmafResult: IRunVmafPairWithFfmpegResult;
 	includeFrameAnalytics: boolean;
 	includeScreenshots: boolean;
 	r2Config: IProbeWorkerR2Config | null;
 	shouldAbort: () => boolean;
 	config: IProbeWorkerEffectiveConfig;
-}): Promise<IDevVideoCompressCompareVmafRowFrameAnalyticsByMode | undefined> {
+}): Promise<IDevVideoVmafFrameAnalytics | undefined> {
 	if (!params.includeFrameAnalytics) {
 		return undefined;
 	}
 
 	if (!params.includeScreenshots) {
-		return buildVmafRowFrameAnalytics(params.deliveryVmafResult, params.displayVmafResult);
+		return buildVmafRowFrameAnalytics(params.vmafResult);
 	}
 
-	let deliveryAnalytics = params.deliveryVmafResult.frameAnalytics;
-	let displayAnalytics = params.displayVmafResult.frameAnalytics;
-
-	if (deliveryAnalytics) {
-		deliveryAnalytics = await enrichVmafFrameAnalyticsWithProbeScreenshots({
-			r2Config: params.r2Config,
-			shopDomain: params.shopDomain,
-			jobId: params.jobId,
-			vmafMode: "delivery",
-			candidateLabel: params.candidate.label,
-			referenceLabel: params.referenceLabel,
-			referenceFilePath: params.referenceFilePath,
-			distortedFilePath: params.distortedFilePath,
-			frameAnalytics: deliveryAnalytics,
-			shouldAbort: params.shouldAbort,
-			ffmpegPath: params.config.ffmpeg.ffmpegPath,
-			keySegment: params.config.screenshots.keySegment,
-			maxSegmentsPerMode: params.config.screenshots.maxSegmentsPerMode,
-		});
-	}
-
-	if (displayAnalytics) {
-		displayAnalytics = await enrichVmafFrameAnalyticsWithProbeScreenshots({
-			r2Config: params.r2Config,
-			shopDomain: params.shopDomain,
-			jobId: params.jobId,
-			vmafMode: "display1080p",
-			candidateLabel: params.candidate.label,
-			referenceLabel: params.referenceLabel,
-			referenceFilePath: params.referenceFilePath,
-			distortedFilePath: params.distortedFilePath,
-			frameAnalytics: displayAnalytics,
-			shouldAbort: params.shouldAbort,
-			ffmpegPath: params.config.ffmpeg.ffmpegPath,
-			keySegment: params.config.screenshots.keySegment,
-			maxSegmentsPerMode: params.config.screenshots.maxSegmentsPerMode,
-		});
-	}
-
-	if (!deliveryAnalytics && !displayAnalytics) {
+	let frameAnalytics = params.vmafResult.frameAnalytics;
+	if (!frameAnalytics) {
 		return undefined;
 	}
 
-	return {
-		delivery: deliveryAnalytics,
-		display1080p: displayAnalytics,
-	};
+	frameAnalytics = await enrichVmafFrameAnalyticsWithProbeScreenshots({
+		r2Config: params.r2Config,
+		shopDomain: params.shopDomain,
+		jobId: params.jobId,
+		vmafMode: "referenceResolution",
+		candidateLabel: params.candidate.label,
+		referenceLabel: params.referenceLabel,
+		referenceFilePath: params.referenceFilePath,
+		distortedFilePath: params.distortedFilePath,
+		frameAnalytics: frameAnalytics,
+		shouldAbort: params.shouldAbort,
+		ffmpegPath: params.config.ffmpeg.ffmpegPath,
+		keySegment: params.config.screenshots.keySegment,
+		maxSegmentsPerMode: params.config.screenshots.maxSegmentsPerMode,
+	});
+
+	return frameAnalytics ?? undefined;
 }
 
 function resolveVmafCandidateDeliveryDimensions(
@@ -422,6 +392,10 @@ export async function runVmafPhaseForJob(
 				: 0;
 		const referenceFrameRateFps =
 			referenceProbed && referenceProbed.frameRateFps > 0 ? referenceProbed.frameRateFps : 0;
+		const referenceWidth =
+			referenceProbed && referenceProbed.width > 0 ? referenceProbed.width : 0;
+		const referenceHeight =
+			referenceProbed && referenceProbed.height > 0 ? referenceProbed.height : 0;
 
 		if (referenceDurationSeconds <= 0) {
 			log.warn(
@@ -443,6 +417,8 @@ export async function runVmafPhaseForJob(
 				urlHost: resolveProbeUrlHostForLog(reference.url),
 				referenceDurationSeconds: referenceDurationSeconds,
 				referenceFrameRateFps: referenceFrameRateFps,
+				referenceWidth: referenceWidth,
+				referenceHeight: referenceHeight,
 			},
 			"vmaf reference probed",
 		);
@@ -705,55 +681,51 @@ export async function runVmafPhaseForJob(
 							? referenceFrameRateFps
 							: undefined;
 
-					const [deliveryVmafResult, displayVmafResult] = await Promise.all([
-						runVmafFn(
-							{
-								distortedFilePath: candidateDownload.filePath,
-								referenceFilePath: referenceDownload.filePath,
-								mode: "delivery",
-								deliveryWidth: dimensions.width,
-								deliveryHeight: dimensions.height,
-								maxDurationSeconds: maxDurationSeconds,
-								frameRateFps: frameRateFpsForAnalytics,
-								jobId: jobId,
-								shouldAbort: shouldAbort,
-								ffmpegPath: deps.config.ffmpeg.ffmpegPath,
-								ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
-								vmafModel: vmafModel,
-								vmafExecutionMode: vmafExecutionMode,
-							},
-							deps.config,
-						),
-						runVmafFn(
-							{
-								distortedFilePath: candidateDownload.filePath,
-								referenceFilePath: referenceDownload.filePath,
-								mode: "display1080p",
-								maxDurationSeconds: maxDurationSeconds,
-								frameRateFps: frameRateFpsForAnalytics,
-								jobId: jobId,
-								shouldAbort: shouldAbort,
-								ffmpegPath: deps.config.ffmpeg.ffmpegPath,
-								ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
-								vmafModel: vmafModel,
-								vmafExecutionMode: vmafExecutionMode,
-							},
-							deps.config,
-						),
-					]);
-					const vmafAtDelivery = deliveryVmafResult.mean;
-					const vmafAtDisplay1080p = displayVmafResult.mean;
+					if (referenceWidth <= 0 || referenceHeight <= 0) {
+						const row = buildSkippedVmafRow(
+							candidate,
+							"ffprobe_incomplete",
+							dimensions.width,
+							dimensions.height,
+						);
+						appendProbeVmafRow(jobId, row);
+						logVmafCandidateSkipped(jobId, candidate, candidateIndex, "ffprobe_incomplete", {
+							reason: "reference_dimensions_missing",
+							referenceWidth: referenceWidth,
+							referenceHeight: referenceHeight,
+						});
+						return row;
+					}
+
+					const vmafResult = await runVmafFn(
+						{
+							distortedFilePath: candidateDownload.filePath,
+							referenceFilePath: referenceDownload.filePath,
+							referenceWidth: referenceWidth,
+							referenceHeight: referenceHeight,
+							maxDurationSeconds: maxDurationSeconds,
+							frameRateFps: frameRateFpsForAnalytics,
+							jobId: jobId,
+							shouldAbort: shouldAbort,
+							ffmpegPath: deps.config.ffmpeg.ffmpegPath,
+							ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
+							vmafModel: vmafModel,
+							vmafExecutionMode: vmafExecutionMode,
+						},
+						deps.config,
+					);
+					const vmafMean = vmafResult.mean;
+					const vmafHarmonicMean = vmafResult.harmonicMean;
 
 					if (shouldAbort()) {
-						if (vmafAtDelivery !== null || vmafAtDisplay1080p !== null) {
+						if (vmafMean !== null || vmafHarmonicMean !== null) {
 							const partialRow = buildVmafCandidateRow({
 								candidate: candidate,
 								deliveryWidth: dimensions.width,
 								deliveryHeight: dimensions.height,
-								vmafAtDelivery: vmafAtDelivery,
-								vmafAtDisplay1080p: vmafAtDisplay1080p,
-								deliveryVmafResult: deliveryVmafResult,
-								displayVmafResult: displayVmafResult,
+								vmafMean: vmafMean,
+								vmafHarmonicMean: vmafHarmonicMean,
+								vmafResult: vmafResult,
 								includeFrameAnalytics: includeFrameAnalytics,
 							});
 							appendProbeVmafRow(jobId, partialRow);
@@ -772,7 +744,7 @@ export async function runVmafPhaseForJob(
 						return buildSkippedVmafRow(candidate, "vmaf_failed", dimensions.width, dimensions.height);
 					}
 
-					if (vmafAtDelivery === null && vmafAtDisplay1080p === null) {
+					if (vmafMean === null && vmafHarmonicMean === null) {
 						const row = buildSkippedVmafRow(
 							candidate,
 							"vmaf_failed",
@@ -781,12 +753,9 @@ export async function runVmafPhaseForJob(
 						);
 						appendProbeVmafRow(jobId, row);
 						logVmafCandidateSkipped(jobId, candidate, candidateIndex, "vmaf_failed", {
-							deliveryFailureReason: deliveryVmafResult.failureReason,
-							displayFailureReason: displayVmafResult.failureReason,
-							deliveryFfmpegExitCode: deliveryVmafResult.ffmpegExitCode,
-							displayFfmpegExitCode: displayVmafResult.ffmpegExitCode,
-							deliveryFfmpegStderrExcerpt: deliveryVmafResult.ffmpegStderrExcerpt,
-							displayFfmpegStderrExcerpt: displayVmafResult.ffmpegStderrExcerpt,
+							failureReason: vmafResult.failureReason,
+							ffmpegExitCode: vmafResult.ffmpegExitCode,
+							ffmpegStderrExcerpt: vmafResult.ffmpegStderrExcerpt,
 						});
 						return row;
 					}
@@ -798,8 +767,7 @@ export async function runVmafPhaseForJob(
 						referenceLabel: reference.label,
 						referenceFilePath: referenceDownload.filePath,
 						distortedFilePath: candidateDownload.filePath,
-						deliveryVmafResult: deliveryVmafResult,
-						displayVmafResult: displayVmafResult,
+						vmafResult: vmafResult,
 						includeFrameAnalytics: includeFrameAnalytics,
 						includeScreenshots: includeScreenshots,
 						r2Config: r2Config,
@@ -811,10 +779,9 @@ export async function runVmafPhaseForJob(
 						candidate: candidate,
 						deliveryWidth: dimensions.width,
 						deliveryHeight: dimensions.height,
-						vmafAtDelivery: vmafAtDelivery,
-						vmafAtDisplay1080p: vmafAtDisplay1080p,
-						deliveryVmafResult: deliveryVmafResult,
-						displayVmafResult: displayVmafResult,
+						vmafMean: vmafMean,
+						vmafHarmonicMean: vmafHarmonicMean,
+						vmafResult: vmafResult,
 						includeFrameAnalytics: includeFrameAnalytics,
 						vmafFrameAnalytics: vmafFrameAnalytics,
 					});
@@ -826,8 +793,8 @@ export async function runVmafPhaseForJob(
 							phase: "vmaf_candidate_done",
 							candidateIndex: candidateIndex,
 							candidateLabel: candidate.label,
-							vmafAtDelivery: vmafAtDelivery,
-							vmafAtDisplay1080p: vmafAtDisplay1080p,
+							vmafMean: vmafMean,
+							vmafHarmonicMean: vmafHarmonicMean,
 						},
 						"vmaf candidate done",
 					);

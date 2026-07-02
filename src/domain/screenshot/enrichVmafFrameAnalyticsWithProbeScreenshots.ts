@@ -6,7 +6,7 @@
 import { unlink } from "node:fs/promises";
 
 import type { IProbeWorkerR2Config } from "../../config/probeWorkerConfig.types.js";
-import type { TVmafFfmpegMode } from "../vmaf/buildVmafFfmpegFilterGraph.js";
+import type { TVmafProbeScreenshotMode } from "../vmaf/buildVmafFfmpegFilterGraph.js";
 import type {
 	IDevVideoVmafFrameAnalytics,
 	IDevVideoVmafFrameSegment,
@@ -28,7 +28,7 @@ export interface IEnrichVmafFrameAnalyticsWithProbeScreenshotsInput {
 	r2Config: IProbeWorkerR2Config | null;
 	shopDomain: string;
 	jobId: string;
-	vmafMode: TVmafFfmpegMode;
+	vmafMode: TVmafProbeScreenshotMode;
 	candidateLabel: string;
 	referenceLabel: string;
 	referenceFilePath: string;
@@ -50,7 +50,7 @@ async function uploadVmafProbeSegmentScreenshot(params: {
 	r2Config: IProbeWorkerR2Config;
 	shopDomain: string;
 	jobId: string;
-	vmafMode: TVmafFfmpegMode;
+	vmafMode: TVmafProbeScreenshotMode;
 	candidateLabel: string;
 	role: "reference" | "distorted";
 	label: string;
@@ -105,7 +105,7 @@ async function enrichVmafProbeSegmentWithScreenshots(params: {
 	r2Config: IProbeWorkerR2Config;
 	shopDomain: string;
 	jobId: string;
-	vmafMode: TVmafFfmpegMode;
+	vmafMode: TVmafProbeScreenshotMode;
 	candidateLabel: string;
 	referenceLabel: string;
 	referenceFilePath: string;

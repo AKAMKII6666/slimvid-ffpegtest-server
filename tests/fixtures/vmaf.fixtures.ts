@@ -96,12 +96,14 @@ export function createSampleVmafFrameAnalytics(): IDevVideoVmafFrameAnalytics {
 export function createMockRunVmafPair(
 	score = 95.5,
 	frameAnalytics: IDevVideoVmafFrameAnalytics | null = null,
+	harmonicMean = 94.2,
 ): (
 	_input: Parameters<typeof import("@worker/domain/vmaf/runVmafPairWithFfmpeg.js").runVmafPairWithFfmpeg>[0],
 ) => Promise<IRunVmafPairWithFfmpegResult> {
 	return async function mockRunVmaf(): Promise<IRunVmafPairWithFfmpegResult> {
 		return {
 			mean: score,
+			harmonicMean: harmonicMean,
 			frameAnalytics: frameAnalytics,
 		};
 	};

@@ -118,9 +118,16 @@ R2 未配置 → `frameAnalytics` 仍有 segment 统计；`screenshotsSkippedRea
 | ffprobe 不完整 | `ffprobe_incomplete` |
 | 与 reference 时长差 > threshold | `duration_mismatch` |
 | 下载失败 | `download_failed` |
-| 两 mode VMAF 均 null | `vmaf_failed` |
+| mean 与 harmonicMean 均为 null | `vmaf_failed` |
 
 单 candidate skip **不**导致整 job failed（与主 app VMAF worker 一致）。
+
+### VMAF 算法（2026-07 硬切换）
+
+- **口径：** distorted upscale @ reference 编码分辨率（bicubic + setpts），对齐 metadata2go。
+- **每 candidate：** 单次 libvmaf（CPU `libvmaf` 或 CUDA `libvmaf_cuda`）。
+- **row 字段：** `vmafMean`、`vmafHarmonicMean`、单层 `vmafFrameAnalytics`（**不再**返回 `vmafAtDelivery` / `vmafAtDisplay1080p`）。
+- **schemaVersion** 仍为 `1`；与主 app 须同批部署，旧 worker 不兼容。
 
 ---
 
@@ -199,6 +206,6 @@ R2 未配置 → `frameAnalytics` 仍有 segment 统计；`screenshotsSkippedRea
 | compare renditions 产出 | `IDevVideoCompressCompareRendition` |
 | vmaf report 产出 | `IDevVideoCompressCompareVmafReport` |
 | vmaf row | `IDevVideoCompressCompareVmafRow` |
-| frame analytics | `IDevVideoCompressCompareVmafRowFrameAnalyticsByMode` |
+| frame analytics | `IDevVideoVmafFrameAnalytics`（row 上单层） |
 
 路径：`slimvid-shopify-app/app/types/backEnd/xhr/dashboard/devVideoCompressCompare*.types.ts`（**只读对照**；worker 在 `src/types/` mirror 复写，不 import）。

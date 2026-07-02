@@ -1,21 +1,22 @@
 /**
  * 模块名称：VMAF ffmpeg 滤镜图构建
- * 模块说明：delivery（reference downscale）与 display1080p；支持 CPU libvmaf 与 CUDA libvmaf_cuda。
+ * 模块说明：metadata2go 对齐：distorted upscale @ reference resolution；支持 CPU libvmaf 与 CUDA libvmaf_cuda。
  */
 
 import type { TVmafExecutionMode } from "../ffmpeg/probeRuntimeCapabilities.js";
 
-export type TVmafFfmpegMode = "delivery" | "display1080p";
+/** VMAF 对比模式 */
+export type TVmafFfmpegMode = "metadata2goBicubicUpscale";
+
+/** VMAF 探针截图 R2 key 段（与 ffmpeg mode 解耦） */
+export type TVmafProbeScreenshotMode = "referenceResolution";
 
 export interface IBuildVmafFfmpegFilterGraphInput {
 	mode: TVmafFfmpegMode;
-	deliveryWidth?: number;
-	deliveryHeight?: number;
+	referenceWidth: number;
+	referenceHeight: number;
 	executionMode?: TVmafExecutionMode;
 }
-
-export const VMAF_DISPLAY_CANVAS_WIDTH = 1920;
-export const VMAF_DISPLAY_CANVAS_HEIGHT = 1080;
 
 export const VMAF_FFMPEG_FILTER_CPU = "libvmaf";
 export const VMAF_FFMPEG_FILTER_CUDA = "libvmaf_cuda";
@@ -24,106 +25,80 @@ function resolveVmafFilterName(executionMode: TVmafExecutionMode): string {
 	return executionMode === "cuda" ? VMAF_FFMPEG_FILTER_CUDA : VMAF_FFMPEG_FILTER_CPU;
 }
 
-function buildDisplayNormalizeChain(
-	executionMode: TVmafExecutionMode,
-	width: number,
-	height: number,
+function buildMetadata2goBicubicUpscaleCpuFilterGraph(
+	referenceWidth: number,
+	referenceHeight: number,
+	vmafFilter: string,
 ): string {
-	if (executionMode === "cuda") {
-		return (
-			"scale_cuda=" +
-			String(width) +
-			":" +
-			String(height) +
-			":force_original_aspect_ratio=decrease:force_divisible_by=2:format=yuv420p," +
-			"pad_cuda=" +
-			String(width) +
-			":" +
-			String(height) +
-			":(ow-iw)/2:(oh-ih)/2:color=black"
-		);
-	}
+	const width = Math.round(referenceWidth);
+	const height = Math.round(referenceHeight);
 
 	return (
-		"scale=" +
+		"[0:v]scale=" +
 		String(width) +
 		":" +
 		String(height) +
-		":force_original_aspect_ratio=decrease," +
-		"pad=" +
-		String(width) +
-		":" +
-		String(height) +
-		":(ow-iw)/2:(oh-ih)/2:black"
+		":flags=bicubic,setpts=PTS-STARTPTS[dist];" +
+		"[1:v]setpts=PTS-STARTPTS[ref];" +
+		"[dist][ref]" +
+		vmafFilter
 	);
 }
 
-function buildDeliveryReferenceScaleChain(
-	executionMode: TVmafExecutionMode,
-	deliveryWidth: number,
-	deliveryHeight: number,
+function buildMetadata2goBicubicUpscaleCudaFilterGraph(
+	referenceWidth: number,
+	referenceHeight: number,
+	vmafFilter: string,
 ): string {
-	const width = Math.round(deliveryWidth);
-	const height = Math.round(deliveryHeight);
+	const width = Math.round(referenceWidth);
+	const height = Math.round(referenceHeight);
 
-	if (executionMode === "cuda") {
-		return "scale_cuda=" + String(width) + ":" + String(height) + ":format=yuv420p";
-	}
-
-	return "scale=" + String(width) + ":" + String(height) + ":flags=bicubic";
+	return (
+		"[0:v]scale_cuda=" +
+		String(width) +
+		":" +
+		String(height) +
+		":format=yuv420p,setpts=PTS-STARTPTS[dist];" +
+		"[1:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS[ref];" +
+		"[dist][ref]" +
+		vmafFilter
+	);
 }
 
-function buildDistortedDeliveryChain(executionMode: TVmafExecutionMode): string {
-	if (executionMode === "cuda") {
-		return "[0:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS[dist];";
-	}
-
-	return "[0:v]setpts=PTS-STARTPTS[dist];";
-}
-
+/**
+ * 构建 libvmaf 前置 scale 滤镜链（不含 libvmaf 与 log_path）。
+ *
+ * 输入约定：`-i distorted -i reference` → `[0:v]` candidate，`[1:v]` reference。
+ */
 export function buildVmafFfmpegFilterGraph(input: IBuildVmafFfmpegFilterGraphInput): string {
 	const executionMode = input.executionMode ?? "cpu";
 	const vmafFilter = resolveVmafFilterName(executionMode);
+	const referenceWidth = input.referenceWidth;
+	const referenceHeight = input.referenceHeight;
 
-	if (input.mode === "display1080p") {
-		const width = VMAF_DISPLAY_CANVAS_WIDTH;
-		const height = VMAF_DISPLAY_CANVAS_HEIGHT;
-		const normalize = buildDisplayNormalizeChain(executionMode, width, height);
-		return (
-			"[0:v]" +
-			normalize +
-			",setpts=PTS-STARTPTS[dist];" +
-			"[1:v]" +
-			normalize +
-			",setpts=PTS-STARTPTS[ref];" +
-			"[dist][ref]" +
-			vmafFilter
+	if (
+		typeof referenceWidth !== "number" ||
+		typeof referenceHeight !== "number" ||
+		!Number.isFinite(referenceWidth) ||
+		!Number.isFinite(referenceHeight) ||
+		referenceWidth <= 0 ||
+		referenceHeight <= 0
+	) {
+		throw new Error("VMAF requires positive referenceWidth and referenceHeight");
+	}
+
+	if (executionMode === "cuda") {
+		return buildMetadata2goBicubicUpscaleCudaFilterGraph(
+			referenceWidth,
+			referenceHeight,
+			vmafFilter,
 		);
 	}
 
-	const deliveryWidth = input.deliveryWidth;
-	const deliveryHeight = input.deliveryHeight;
-	if (
-		typeof deliveryWidth !== "number" ||
-		typeof deliveryHeight !== "number" ||
-		!Number.isFinite(deliveryWidth) ||
-		!Number.isFinite(deliveryHeight) ||
-		deliveryWidth <= 0 ||
-		deliveryHeight <= 0
-	) {
-		throw new Error("delivery VMAF requires positive deliveryWidth and deliveryHeight");
-	}
-
-	const refScale = buildDeliveryReferenceScaleChain(executionMode, deliveryWidth, deliveryHeight);
-	const distChain = buildDistortedDeliveryChain(executionMode);
-
-	return (
-		"[1:v]" +
-		refScale +
-		",setpts=PTS-STARTPTS[ref];" +
-		distChain +
-		"[dist][ref]" +
-		vmafFilter
+	return buildMetadata2goBicubicUpscaleCpuFilterGraph(
+		referenceWidth,
+		referenceHeight,
+		vmafFilter,
 	);
 }
 
