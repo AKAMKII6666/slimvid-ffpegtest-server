@@ -5,7 +5,10 @@
 
 import { loadProbeWorkerConfig } from "./config/loadProbeWorkerConfig.js";
 import { createProbeWorkerApp } from "./http/createProbeWorkerApp.js";
-import { createModuleLogger } from "./logging/createModuleLogger.js";
+import {
+	createModuleLogger,
+	resolveProbeWorkerLogDir,
+} from "./logging/createModuleLogger.js";
 
 async function main(): Promise<void> {
 	const log = createModuleLogger({ module: "main" });
@@ -22,6 +25,7 @@ async function main(): Promise<void> {
 			host: config.server.host,
 			port: config.server.port,
 			address,
+			logDir: resolveProbeWorkerLogDir(),
 		},
 		"probe worker listening",
 	);

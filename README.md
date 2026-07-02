@@ -155,6 +155,32 @@ Worker 进程仍需能 **出站 HTTPS** 下载 job 里的视频 URL。
 
 ---
 
+## 日志（落盘 + 细粒度 phase）
+
+启动后日志同时输出到 **控制台** 与 **落盘文件**：
+
+```text
+.probeWorkerPinoLogs/app/YYYY-MM-DD.log
+```
+
+启动 log 会打印 `logDir` 绝对路径。VMAF / compare 执行阶段会写 `phase` 字段（如 `vmaf_reference_download`、`vmaf_ffmpeg`、`vmaf_candidate_skipped`）；ffmpeg 失败时含 `ffmpegStderrExcerpt`（截断，不含完整 URL）。
+
+**Windows 查日志：**
+
+```powershell
+Get-Content .probeWorkerPinoLogs\app\$(Get-Date -Format yyyy-MM-dd).log -Wait |
+  Select-String -Pattern 'vmaf_|compare_|job_'
+```
+
+**环境变量：**
+
+| 变量 | 说明 |
+|------|------|
+| `LOG_LEVEL` | pino 级别，默认 `info` |
+| `PROBE_WORKER_PINO_LOG_RETENTION_DAYS` | 落盘保留天数，默认 `12` |
+
+---
+
 ## 开发命令
 
 ```powershell

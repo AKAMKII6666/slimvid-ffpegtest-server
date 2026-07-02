@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { IProbeWorkerEffectiveConfig } from "../config/probeWorkerConfig.types.js";
+import { createModuleLogger } from "../logging/createModuleLogger.js";
 import {
 	findJobIdByClientJobId,
 	registerClientJobIdMapping,
@@ -20,6 +21,8 @@ import type {
 	IProbeComputeJobCreateRequest,
 	IProbeComputeJobCreateResponse,
 } from "../types/probeComputeJob.types.js";
+
+const log = createModuleLogger({ module: "job.service" });
 
 export interface ICreateProbeComputeJobServiceParams {
 	request: IProbeComputeJobCreateRequest;
@@ -71,6 +74,22 @@ export function createProbeComputeJobService(
 	}
 
 	scheduler.enqueue(jobId);
+
+	log.info(
+		{
+			jobId: jobId,
+			jobKind: request.jobKind,
+			clientJobId: request.clientJobId,
+			shopDomain: request.caller.shopDomain,
+			videoId: request.caller.videoId,
+			productId: request.caller.productId,
+			batchId: request.caller.batchId,
+			compareRenditionCount: request.compare?.renditions.length,
+			vmafCandidateCount: request.vmaf?.candidates.length,
+			phase: "job_created",
+		},
+		"probe job created and enqueued",
+	);
 
 	const snapshot = getProbeComputeJobSnapshot(jobId, config, nowMs);
 	const status = snapshot?.status === "running" ? "running" : "pending";

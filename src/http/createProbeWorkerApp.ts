@@ -3,10 +3,10 @@
  * 模块说明：组装 HTTP 服务；route handler 保持薄。
  */
 
-import Fastify from "fastify";
+import Fastify, { type FastifyBaseLogger } from "fastify";
 
 import type { IProbeWorkerEffectiveConfig } from "../config/probeWorkerConfig.types.js";
-import { PROBE_WORKER_SERVICE_NAME } from "../config/probeWorkerConfig.types.js";
+import { createFastifyLoggerInstance } from "../logging/createModuleLogger.js";
 import type { TFfmpegSpawner } from "../domain/ffmpeg/ffmpegSpawner.types.js";
 import {
 	createProbeComputeJobScheduler,
@@ -60,13 +60,7 @@ export async function createProbeWorkerApp(options: ICreateProbeWorkerAppOptions
 		});
 
 	const app = Fastify({
-		logger: {
-			level: process.env.LOG_LEVEL ?? "info",
-			base: {
-				service: PROBE_WORKER_SERVICE_NAME,
-				module: "http.app",
-			},
-		},
+		loggerInstance: createFastifyLoggerInstance() as unknown as FastifyBaseLogger,
 	});
 
 	await registerHealthRoute(app, {

@@ -126,6 +126,14 @@ npm start
 | `PROBE_WORKER_FFPROBE_PATH` | `ffmpeg.ffprobePath` |
 | `PROBE_WORKER_CLIENT_JOB_TTL_MS` | `job.clientJobTtlMs` |
 | `PROBE_WORKER_SCREENSHOTS_ENABLED` | `screenshots.enabled` |
+| `LOG_LEVEL` | pino 级别（默认 `info`） |
+| `PROBE_WORKER_PINO_LOG_RETENTION_DAYS` | 落盘日志保留天数（默认 `12`） |
+
+### 落盘日志
+
+- 路径：`.probeWorkerPinoLogs/app/YYYY-MM-DD.log`（相对进程 cwd）
+- 控制台与落盘 **同内容**；HTTP access log 与 job phase log 均落盘
+- VMAF ffmpeg 失败时 log 含 `ffmpegStderrExcerpt`（截断）；**禁止** log 完整 CDN URL
 
 ---
 

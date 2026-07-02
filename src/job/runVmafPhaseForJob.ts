@@ -43,6 +43,10 @@ import {
 	getProbeComputeJobMutableEntry,
 	setProbeComputeVmafReport,
 } from "./probeComputeJobStore.memory.js";
+import { createModuleLogger } from "../logging/createModuleLogger.js";
+import { resolveProbeUrlHostForLog } from "../logging/resolveProbeUrlHostForLog.helpers.js";
+
+const log = createModuleLogger({ module: "job.vmaf" });
 
 export const DEFAULT_VMAF_DURATION_MISMATCH_THRESHOLD_SECONDS = 2;
 
@@ -233,9 +237,11 @@ function buildPartialVmafReport(
 }
 
 async function probeVideoUrlMetadataSoft(
+	jobId: string,
 	url: string,
 	probeFn: IRunVmafPhaseDeps["probeVideoUrlMetadataFn"],
 	config: IProbeWorkerEffectiveConfig,
+	context: string,
 ): Promise<IProbedVideoUrlMetadata | null> {
 	const fn = probeFn ?? probeVideoUrlMetadata;
 	try {
@@ -243,9 +249,42 @@ async function probeVideoUrlMetadataSoft(
 			ffprobePath: config.ffmpeg.ffprobePath,
 			ffprobeTimeoutMs: config.probe.ffprobeTimeoutMs,
 		});
-	} catch {
+	} catch (err: unknown) {
+		const message = err instanceof Error ? err.message : String(err);
+		log.warn(
+			{
+				jobId: jobId,
+				phase: "vmaf_ffprobe_soft",
+				context: context,
+				urlHost: resolveProbeUrlHostForLog(url),
+				err: message,
+			},
+			"vmaf soft ffprobe failed",
+		);
 		return null;
 	}
+}
+
+function logVmafCandidateSkipped(
+	jobId: string,
+	candidate: IVmafCandidateDraft,
+	candidateIndex: number,
+	skipReason: TDevVideoCompressCompareVmafSkipReason,
+	extra?: Record<string, unknown>,
+): void {
+	log.warn(
+		{
+			jobId: jobId,
+			phase: "vmaf_candidate_skipped",
+			candidateIndex: candidateIndex,
+			candidateLabel: candidate.label,
+			candidateGroup: candidate.group,
+			urlHost: resolveProbeUrlHostForLog(candidate.url),
+			skipReason: skipReason,
+			...extra,
+		},
+		"vmaf candidate skipped",
+	);
 }
 
 function finalizeVmafJobIfCancelled(
@@ -340,6 +379,21 @@ export async function runVmafPhaseForJob(
 			runtimeCapabilities,
 		);
 
+		log.info(
+			{
+				jobId: jobId,
+				phase: "vmaf_libvmaf_probe",
+				libvmafAvailable: runtimeCapabilities.libvmafAvailable,
+				libvmafCudaAvailable: runtimeCapabilities.libvmafCudaAvailable,
+				vmafExecutionMode: vmafExecutionMode,
+				candidateCount: candidates.length,
+				includeFrameAnalytics: includeFrameAnalytics,
+				includeScreenshots: includeScreenshots,
+				r2Configured: r2Config !== null,
+			},
+			"vmaf libvmaf probe",
+		);
+
 		if (
 			finalizeVmafJobIfCancelled(
 				jobId,
@@ -355,9 +409,11 @@ export async function runVmafPhaseForJob(
 		}
 
 		const referenceProbed = await probeVideoUrlMetadataSoft(
+			jobId,
 			reference.url,
 			deps.probeVideoUrlMetadataFn,
 			deps.config,
+			"reference",
 		);
 		const referenceDurationSeconds =
 			referenceProbed && referenceProbed.durationSeconds > 0
@@ -367,8 +423,28 @@ export async function runVmafPhaseForJob(
 			referenceProbed && referenceProbed.frameRateFps > 0 ? referenceProbed.frameRateFps : 0;
 
 		if (referenceDurationSeconds <= 0) {
+			log.warn(
+				{
+					jobId: jobId,
+					phase: "vmaf_reference_probe",
+					urlHost: resolveProbeUrlHostForLog(reference.url),
+					referenceProbed: referenceProbed !== null,
+				},
+				"vmaf reference duration unavailable",
+			);
 			throw new Error("Original source duration is not available");
 		}
+
+		log.info(
+			{
+				jobId: jobId,
+				phase: "vmaf_reference_probed",
+				urlHost: resolveProbeUrlHostForLog(reference.url),
+				referenceDurationSeconds: referenceDurationSeconds,
+				referenceFrameRateFps: referenceFrameRateFps,
+			},
+			"vmaf reference probed",
+		);
 
 		if (
 			finalizeVmafJobIfCancelled(
@@ -384,11 +460,31 @@ export async function runVmafPhaseForJob(
 			return null;
 		}
 
+		log.info(
+			{
+				jobId: jobId,
+				phase: "vmaf_reference_download",
+				step: "start",
+				urlHost: resolveProbeUrlHostForLog(reference.url),
+			},
+			"vmaf reference download start",
+		);
+
 		const referenceDownload = await downloadFn(reference.url, {
 			signal: abortContext.downloadSignal,
 			timeoutMs: deps.config.probe.downloadTimeoutMs,
 		});
 		if (!referenceDownload.ok) {
+			log.warn(
+				{
+					jobId: jobId,
+					phase: "vmaf_reference_download",
+					step: "failed",
+					urlHost: resolveProbeUrlHostForLog(reference.url),
+					err: referenceDownload.error,
+				},
+				"vmaf reference download failed",
+			);
 			if (
 				shouldAbort() &&
 				finalizeVmafJobIfCancelled(
@@ -407,6 +503,17 @@ export async function runVmafPhaseForJob(
 		}
 		referenceCleanup = referenceDownload.cleanup;
 
+		log.info(
+			{
+				jobId: jobId,
+				phase: "vmaf_reference_download",
+				step: "done",
+				urlHost: resolveProbeUrlHostForLog(reference.url),
+				fileSizeBytes: referenceDownload.fileSize,
+			},
+			"vmaf reference download done",
+		);
+
 		for (let index = 0; index < candidates.length; index += 1) {
 			if (
 				finalizeVmafJobIfCancelled(
@@ -424,22 +531,38 @@ export async function runVmafPhaseForJob(
 
 			const candidate = candidates[index];
 
+			log.info(
+				{
+					jobId: jobId,
+					phase: "vmaf_candidate_start",
+					candidateIndex: index,
+					candidateLabel: candidate.label,
+					candidateGroup: candidate.group,
+					urlHost: resolveProbeUrlHostForLog(candidate.url),
+				},
+				"vmaf candidate start",
+			);
+
 			if (isVmafCandidateSkippableAsHls(candidate)) {
 				const row = buildSkippedVmafRow(candidate, "hls", candidate.width, candidate.height);
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+				logVmafCandidateSkipped(jobId, candidate, index, "hls");
 				continue;
 			}
 
 			const candidateProbed = await probeVideoUrlMetadataSoft(
+				jobId,
 				candidate.url,
 				deps.probeVideoUrlMetadataFn,
 				deps.config,
+				"candidate",
 			);
 			if (!candidateProbed) {
 				const row = buildSkippedVmafRow(candidate, "ffprobe_incomplete", 0, 0);
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+				logVmafCandidateSkipped(jobId, candidate, index, "ffprobe_incomplete");
 				continue;
 			}
 
@@ -453,6 +576,10 @@ export async function runVmafPhaseForJob(
 				);
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+				logVmafCandidateSkipped(jobId, candidate, index, "ffprobe_incomplete", {
+					deliveryWidth: dimensions.width,
+					deliveryHeight: dimensions.height,
+				});
 				continue;
 			}
 
@@ -467,6 +594,9 @@ export async function runVmafPhaseForJob(
 				);
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+				logVmafCandidateSkipped(jobId, candidate, index, "ffprobe_incomplete", {
+					reason: "duration_missing",
+				});
 				continue;
 			}
 
@@ -480,6 +610,12 @@ export async function runVmafPhaseForJob(
 				);
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+				logVmafCandidateSkipped(jobId, candidate, index, "duration_mismatch", {
+					referenceDurationSeconds: referenceDurationSeconds,
+					candidateDurationSeconds: candidateDurationSeconds,
+					durationDelta: durationDelta,
+					thresholdSeconds: durationMismatchThreshold,
+				});
 				continue;
 			}
 
@@ -505,6 +641,18 @@ export async function runVmafPhaseForJob(
 				timeoutMs: deps.config.probe.downloadTimeoutMs,
 			});
 			if (!candidateDownload.ok) {
+				log.warn(
+					{
+						jobId: jobId,
+						phase: "vmaf_candidate_download",
+						step: "failed",
+						candidateIndex: index,
+						candidateLabel: candidate.label,
+						urlHost: resolveProbeUrlHostForLog(candidate.url),
+						err: candidateDownload.error,
+					},
+					"vmaf candidate download failed",
+				);
 				if (
 					shouldAbort() &&
 					finalizeVmafJobIfCancelled(
@@ -527,8 +675,23 @@ export async function runVmafPhaseForJob(
 				);
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+				logVmafCandidateSkipped(jobId, candidate, index, "download_failed", {
+					err: candidateDownload.error,
+				});
 				continue;
 			}
+
+			log.info(
+				{
+					jobId: jobId,
+					phase: "vmaf_candidate_download",
+					step: "done",
+					candidateIndex: index,
+					candidateLabel: candidate.label,
+					fileSizeBytes: candidateDownload.fileSize,
+				},
+				"vmaf candidate download done",
+			);
 
 			try {
 				const deliveryVmafResult = await runVmafFn(
@@ -611,6 +774,14 @@ export async function runVmafPhaseForJob(
 					);
 					resultRows.push(row);
 					appendProbeVmafRow(jobId, row);
+					logVmafCandidateSkipped(jobId, candidate, index, "vmaf_failed", {
+						deliveryFailureReason: deliveryVmafResult.failureReason,
+						displayFailureReason: displayVmafResult.failureReason,
+						deliveryFfmpegExitCode: deliveryVmafResult.ffmpegExitCode,
+						displayFfmpegExitCode: displayVmafResult.ffmpegExitCode,
+						deliveryFfmpegStderrExcerpt: deliveryVmafResult.ffmpegStderrExcerpt,
+						displayFfmpegStderrExcerpt: displayVmafResult.ffmpegStderrExcerpt,
+					});
 					continue;
 				}
 
@@ -643,6 +814,18 @@ export async function runVmafPhaseForJob(
 				});
 				resultRows.push(row);
 				appendProbeVmafRow(jobId, row);
+
+				log.info(
+					{
+						jobId: jobId,
+						phase: "vmaf_candidate_done",
+						candidateIndex: index,
+						candidateLabel: candidate.label,
+						vmafAtDelivery: vmafAtDelivery,
+						vmafAtDisplay1080p: vmafAtDisplay1080p,
+					},
+					"vmaf candidate done",
+				);
 			} finally {
 				await candidateDownload.cleanup();
 			}
@@ -660,6 +843,14 @@ export async function runVmafPhaseForJob(
 		return vmafReport;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : "VMAF phase failed";
+		log.warn(
+			{
+				jobId: jobId,
+				phase: "vmaf_phase_error",
+				err: message,
+			},
+			"vmaf phase error",
+		);
 		if (
 			shouldAbort() &&
 			finalizeVmafJobIfCancelled(

@@ -11,6 +11,8 @@ import { randomUUID } from "node:crypto";
 
 import type { IProbeWorkerEffectiveConfig } from "../../config/probeWorkerConfig.types.js";
 import type { TVmafExecutionMode } from "../ffmpeg/probeRuntimeCapabilities.js";
+import { createModuleLogger } from "../../logging/createModuleLogger.js";
+import { truncateLogText } from "../../logging/truncateLogText.helpers.js";
 import {
 	buildVmafFfmpegFullFilter,
 	type TVmafFfmpegMode,
@@ -23,6 +25,8 @@ import { parseVmafFfmpegJsonMean } from "./parseVmafFfmpegJson.js";
 import { parseVmafFfmpegFrameAnalytics } from "./parseVmafFfmpegFrameAnalytics.js";
 import { registerVmafFfmpegProcess } from "../ffmpeg/vmafProcessRegistry.memory.js";
 import type { IDevVideoVmafFrameAnalytics } from "../../types/devVideoVmaf.types.js";
+
+const log = createModuleLogger({ module: "domain.vmaf.ffmpeg" });
 
 export const DEFAULT_VMAF_MODEL_VERSION = "vmaf_v0.6.1";
 
@@ -42,9 +46,23 @@ export interface IRunVmafPairWithFfmpegInput {
 	vmafExecutionMode?: TVmafExecutionMode;
 }
 
+/** VMAF ffmpeg 失败原因（诊断用，不写 Wire DTO） */
+export type TVmafFfmpegFailureReason =
+	| "aborted"
+	| "exit_non_zero"
+	| "spawn_error"
+	| "vmaf_log_read_failed"
+	| "vmaf_log_parse_empty";
+
 export interface IRunVmafPairWithFfmpegResult {
 	mean: number | null;
 	frameAnalytics: IDevVideoVmafFrameAnalytics | null;
+	/** ffmpeg 退出码；成功时为 0 */
+	ffmpegExitCode?: number | null;
+	/** stderr 摘要（截断） */
+	ffmpegStderrExcerpt?: string;
+	/** 失败原因 */
+	failureReason?: TVmafFfmpegFailureReason;
 }
 
 export type TRunVmafPairFfmpegSpawner = (
@@ -56,6 +74,39 @@ export type TRunVmafPairFfmpegSpawner = (
 		timeoutMs?: number;
 	},
 ) => Promise<{ exitCode: number; stderr: string }>;
+
+function buildVmafFfmpegFailureResult(params: {
+	exitCode?: number | null;
+	stderr?: string;
+	failureReason: TVmafFfmpegFailureReason;
+	input: IRunVmafPairWithFfmpegInput;
+}): IRunVmafPairWithFfmpegResult {
+	const stderrExcerpt =
+		typeof params.stderr === "string" && params.stderr.trim() !== ""
+			? truncateLogText(params.stderr.trim())
+			: undefined;
+
+	log.warn(
+		{
+			jobId: params.input.jobId,
+			phase: "vmaf_ffmpeg",
+			mode: params.input.mode,
+			vmafExecutionMode: params.input.vmafExecutionMode ?? "cpu",
+			ffmpegExitCode: params.exitCode ?? null,
+			failureReason: params.failureReason,
+			ffmpegStderrExcerpt: stderrExcerpt,
+		},
+		"vmaf ffmpeg failed",
+	);
+
+	return {
+		mean: null,
+		frameAnalytics: null,
+		ffmpegExitCode: params.exitCode ?? null,
+		ffmpegStderrExcerpt: stderrExcerpt,
+		failureReason: params.failureReason,
+	};
+}
 
 async function defaultRunVmafPairFfmpegSpawner(
 	command: string,
@@ -127,10 +178,10 @@ export async function runVmafPairWithFfmpeg(
 	config?: Pick<IProbeWorkerEffectiveConfig, "ffmpeg" | "vmaf">,
 ): Promise<IRunVmafPairWithFfmpegResult> {
 	if (input.shouldAbort?.()) {
-		return {
-			mean: null,
-			frameAnalytics: null,
-		};
+		return buildVmafFfmpegFailureResult({
+			failureReason: "aborted",
+			input: input,
+		});
 	}
 
 	const ffmpegPath = input.ffmpegPath ?? config?.ffmpeg.ffmpegPath ?? "ffmpeg";
@@ -177,6 +228,18 @@ export async function runVmafPairWithFfmpeg(
 
 	args.push("-lavfi", filter, "-f", "null", "-");
 
+	log.info(
+		{
+			jobId: input.jobId,
+			phase: "vmaf_ffmpeg_start",
+			mode: input.mode,
+			vmafExecutionMode: vmafExecutionMode,
+			vmafModel: vmafModel,
+			maxDurationSeconds: input.maxDurationSeconds,
+		},
+		"vmaf ffmpeg start",
+	);
+
 	const spawner = runVmafPairFfmpegSpawnerOverride ?? defaultRunVmafPairFfmpegSpawner;
 
 	try {
@@ -186,13 +249,27 @@ export async function runVmafPairWithFfmpeg(
 			timeoutMs: ffmpegTimeoutMs,
 		});
 		if (result.exitCode !== 0) {
-			return {
-				mean: null,
-				frameAnalytics: null,
-			};
+			return buildVmafFfmpegFailureResult({
+				exitCode: result.exitCode,
+				stderr: result.stderr,
+				failureReason: "exit_non_zero",
+				input: input,
+			});
 		}
 
-		const jsonText = await readFile(logPath, "utf8");
+		let jsonText: string;
+		try {
+			jsonText = await readFile(logPath, "utf8");
+		} catch (readErr: unknown) {
+			const message = readErr instanceof Error ? readErr.message : String(readErr);
+			return buildVmafFfmpegFailureResult({
+				exitCode: 0,
+				stderr: message,
+				failureReason: "vmaf_log_read_failed",
+				input: input,
+			});
+		}
+
 		const mean = parseVmafFfmpegJsonMean(jsonText);
 		let frameAnalytics: IDevVideoVmafFrameAnalytics | null = null;
 
@@ -204,15 +281,38 @@ export async function runVmafPairWithFfmpeg(
 			frameAnalytics = parseVmafFfmpegFrameAnalytics(jsonText, input.frameRateFps);
 		}
 
+		if (mean === null) {
+			return buildVmafFfmpegFailureResult({
+				exitCode: 0,
+				stderr: "vmaf json log parsed empty mean",
+				failureReason: "vmaf_log_parse_empty",
+				input: input,
+			});
+		}
+
+		log.info(
+			{
+				jobId: input.jobId,
+				phase: "vmaf_ffmpeg_done",
+				mode: input.mode,
+				vmafExecutionMode: vmafExecutionMode,
+				mean: mean,
+			},
+			"vmaf ffmpeg done",
+		);
+
 		return {
 			mean: mean,
 			frameAnalytics: frameAnalytics,
+			ffmpegExitCode: 0,
 		};
-	} catch {
-		return {
-			mean: null,
-			frameAnalytics: null,
-		};
+	} catch (err: unknown) {
+		const message = err instanceof Error ? err.message : String(err);
+		return buildVmafFfmpegFailureResult({
+			stderr: message,
+			failureReason: "spawn_error",
+			input: input,
+		});
 	} finally {
 		await unlink(logPath).catch(function (): void {
 			// 忽略清理失败
