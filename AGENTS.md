@@ -67,7 +67,7 @@ npm run test        # 改解析器、job 状态机、ffmpeg 编排后
 | 来源 | 内容 |
 |------|------|
 | `config/probe-worker.local.json` | 端口、并行、GPU、screenshots、job TTL |
-| `.env` | `PROBE_WORKER_AUTH_TOKEN`、`PROBE_WORKER_R2_*` |
+| `.env` | `PROBE_WORKER_AUTH_TOKEN`、`PROBE_WORKER_R2_*`；`npm run dev` / `start` 经 `node --env-file=.env` 加载 |
 | env override | 如 `PROBE_WORKER_PORT` 覆盖 JSON |
 
 ## 环境变量（摘要）
