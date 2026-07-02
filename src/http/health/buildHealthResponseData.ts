@@ -26,6 +26,7 @@ export interface IHealthResponseData {
 	concurrency: {
 		maxVmafJobs: number;
 		maxFfprobeParallel: number;
+		maxVmafCandidatesParallel: number;
 	};
 	apiSchemaVersion: typeof PROBE_WORKER_API_SCHEMA_VERSION;
 }
@@ -59,6 +60,7 @@ export function buildHealthResponseData(
 		concurrency: {
 			maxVmafJobs: config.concurrency.maxVmafJobs,
 			maxFfprobeParallel: config.concurrency.maxFfprobeParallel,
+			maxVmafCandidatesParallel: config.concurrency.maxVmafCandidatesParallel,
 		},
 		apiSchemaVersion: PROBE_WORKER_API_SCHEMA_VERSION,
 	};

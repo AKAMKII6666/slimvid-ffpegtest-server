@@ -273,9 +273,9 @@ describe("jobs routes", function () {
 			};
 		} = { ok: false, data: { status: "pending" } };
 
-		for (let attempt = 0; attempt < 20; attempt += 1) {
+		for (let attempt = 0; attempt < 80; attempt += 1) {
 			await new Promise(function wait(resolve): void {
-				setTimeout(resolve, 10);
+				setTimeout(resolve, 25);
 			});
 			const polled = await app.inject({
 				method: "GET",

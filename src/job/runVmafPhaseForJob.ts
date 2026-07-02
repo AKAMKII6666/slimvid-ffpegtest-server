@@ -1,6 +1,6 @@
 /**
  * 模块名称：VMAF 阶段执行器
- * 模块说明：reference 下载 → candidates 串行 libvmaf；单 candidate skip 不 fail job。
+ * 模块说明：reference 下载 → candidates 并行 libvmaf；单 candidate skip 不 fail job。
  */
 
 import type { IProbeWorkerEffectiveConfig, IProbeWorkerR2Config } from "../config/probeWorkerConfig.types.js";
@@ -43,6 +43,7 @@ import {
 	getProbeComputeJobMutableEntry,
 	setProbeComputeVmafReport,
 } from "./probeComputeJobStore.memory.js";
+import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { createModuleLogger } from "../logging/createModuleLogger.js";
 import { resolveProbeUrlHostForLog } from "../logging/resolveProbeUrlHostForLog.helpers.js";
 
@@ -514,145 +515,117 @@ export async function runVmafPhaseForJob(
 			"vmaf reference download done",
 		);
 
-		for (let index = 0; index < candidates.length; index += 1) {
-			if (
-				finalizeVmafJobIfCancelled(
-					jobId,
-					entry.request.caller.videoId,
-					reference.label,
-					vmafModel,
-					startedAtMs,
-					resultRows,
-					nowMs(),
-				)
-			) {
-				return null;
-			}
+		const candidateParallelism = deps.config.concurrency.maxVmafCandidatesParallel;
+		let vmafPhaseCancelled = false;
 
-			const candidate = candidates[index];
+		const candidateRows = await mapWithConcurrency(
+			candidates,
+			candidateParallelism,
+			async function processVmafCandidate(
+				candidate,
+				candidateIndex,
+			): Promise<IDevVideoCompressCompareVmafRow> {
+				if (
+					vmafPhaseCancelled ||
+					finalizeVmafJobIfCancelled(
+						jobId,
+						entry.request.caller.videoId,
+						reference.label,
+						vmafModel,
+						startedAtMs,
+						resultRows,
+						nowMs(),
+					)
+				) {
+					vmafPhaseCancelled = true;
+					return buildSkippedVmafRow(candidate, "vmaf_failed", 0, 0);
+				}
 
-			log.info(
-				{
-					jobId: jobId,
-					phase: "vmaf_candidate_start",
-					candidateIndex: index,
-					candidateLabel: candidate.label,
-					candidateGroup: candidate.group,
-					urlHost: resolveProbeUrlHostForLog(candidate.url),
-				},
-				"vmaf candidate start",
-			);
-
-			if (isVmafCandidateSkippableAsHls(candidate)) {
-				const row = buildSkippedVmafRow(candidate, "hls", candidate.width, candidate.height);
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
-				logVmafCandidateSkipped(jobId, candidate, index, "hls");
-				continue;
-			}
-
-			const candidateProbed = await probeVideoUrlMetadataSoft(
-				jobId,
-				candidate.url,
-				deps.probeVideoUrlMetadataFn,
-				deps.config,
-				"candidate",
-			);
-			if (!candidateProbed) {
-				const row = buildSkippedVmafRow(candidate, "ffprobe_incomplete", 0, 0);
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
-				logVmafCandidateSkipped(jobId, candidate, index, "ffprobe_incomplete");
-				continue;
-			}
-
-			const dimensions = resolveVmafCandidateDeliveryDimensions(candidate, candidateProbed);
-			if (dimensions.width <= 0 || dimensions.height <= 0) {
-				const row = buildSkippedVmafRow(
-					candidate,
-					"ffprobe_incomplete",
-					dimensions.width,
-					dimensions.height,
-				);
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
-				logVmafCandidateSkipped(jobId, candidate, index, "ffprobe_incomplete", {
-					deliveryWidth: dimensions.width,
-					deliveryHeight: dimensions.height,
-				});
-				continue;
-			}
-
-			const candidateDurationSeconds =
-				candidateProbed.durationSeconds > 0 ? candidateProbed.durationSeconds : 0;
-			if (candidateDurationSeconds <= 0) {
-				const row = buildSkippedVmafRow(
-					candidate,
-					"ffprobe_incomplete",
-					dimensions.width,
-					dimensions.height,
-				);
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
-				logVmafCandidateSkipped(jobId, candidate, index, "ffprobe_incomplete", {
-					reason: "duration_missing",
-				});
-				continue;
-			}
-
-			const durationDelta = Math.abs(referenceDurationSeconds - candidateDurationSeconds);
-			if (durationDelta > durationMismatchThreshold) {
-				const row = buildSkippedVmafRow(
-					candidate,
-					"duration_mismatch",
-					dimensions.width,
-					dimensions.height,
-				);
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
-				logVmafCandidateSkipped(jobId, candidate, index, "duration_mismatch", {
-					referenceDurationSeconds: referenceDurationSeconds,
-					candidateDurationSeconds: candidateDurationSeconds,
-					durationDelta: durationDelta,
-					thresholdSeconds: durationMismatchThreshold,
-				});
-				continue;
-			}
-
-			const maxDurationSeconds = Math.min(referenceDurationSeconds, candidateDurationSeconds);
-
-			if (
-				shouldAbort() &&
-				finalizeVmafJobIfCancelled(
-					jobId,
-					entry.request.caller.videoId,
-					reference.label,
-					vmafModel,
-					startedAtMs,
-					resultRows,
-					nowMs(),
-				)
-			) {
-				return null;
-			}
-
-			const candidateDownload = await downloadFn(candidate.url, {
-				signal: abortContext.downloadSignal,
-				timeoutMs: deps.config.probe.downloadTimeoutMs,
-			});
-			if (!candidateDownload.ok) {
-				log.warn(
+				log.info(
 					{
 						jobId: jobId,
-						phase: "vmaf_candidate_download",
-						step: "failed",
-						candidateIndex: index,
+						phase: "vmaf_candidate_start",
+						candidateIndex: candidateIndex,
 						candidateLabel: candidate.label,
+						candidateGroup: candidate.group,
 						urlHost: resolveProbeUrlHostForLog(candidate.url),
-						err: candidateDownload.error,
 					},
-					"vmaf candidate download failed",
+					"vmaf candidate start",
 				);
+
+				if (isVmafCandidateSkippableAsHls(candidate)) {
+					const row = buildSkippedVmafRow(candidate, "hls", candidate.width, candidate.height);
+					appendProbeVmafRow(jobId, row);
+					logVmafCandidateSkipped(jobId, candidate, candidateIndex, "hls");
+					return row;
+				}
+
+				const candidateProbed = await probeVideoUrlMetadataSoft(
+					jobId,
+					candidate.url,
+					deps.probeVideoUrlMetadataFn,
+					deps.config,
+					"candidate",
+				);
+				if (!candidateProbed) {
+					const row = buildSkippedVmafRow(candidate, "ffprobe_incomplete", 0, 0);
+					appendProbeVmafRow(jobId, row);
+					logVmafCandidateSkipped(jobId, candidate, candidateIndex, "ffprobe_incomplete");
+					return row;
+				}
+
+				const dimensions = resolveVmafCandidateDeliveryDimensions(candidate, candidateProbed);
+				if (dimensions.width <= 0 || dimensions.height <= 0) {
+					const row = buildSkippedVmafRow(
+						candidate,
+						"ffprobe_incomplete",
+						dimensions.width,
+						dimensions.height,
+					);
+					appendProbeVmafRow(jobId, row);
+					logVmafCandidateSkipped(jobId, candidate, candidateIndex, "ffprobe_incomplete", {
+						deliveryWidth: dimensions.width,
+						deliveryHeight: dimensions.height,
+					});
+					return row;
+				}
+
+				const candidateDurationSeconds =
+					candidateProbed.durationSeconds > 0 ? candidateProbed.durationSeconds : 0;
+				if (candidateDurationSeconds <= 0) {
+					const row = buildSkippedVmafRow(
+						candidate,
+						"ffprobe_incomplete",
+						dimensions.width,
+						dimensions.height,
+					);
+					appendProbeVmafRow(jobId, row);
+					logVmafCandidateSkipped(jobId, candidate, candidateIndex, "ffprobe_incomplete", {
+						reason: "duration_missing",
+					});
+					return row;
+				}
+
+				const durationDelta = Math.abs(referenceDurationSeconds - candidateDurationSeconds);
+				if (durationDelta > durationMismatchThreshold) {
+					const row = buildSkippedVmafRow(
+						candidate,
+						"duration_mismatch",
+						dimensions.width,
+						dimensions.height,
+					);
+					appendProbeVmafRow(jobId, row);
+					logVmafCandidateSkipped(jobId, candidate, candidateIndex, "duration_mismatch", {
+						referenceDurationSeconds: referenceDurationSeconds,
+						candidateDurationSeconds: candidateDurationSeconds,
+						durationDelta: durationDelta,
+						thresholdSeconds: durationMismatchThreshold,
+					});
+					return row;
+				}
+
+				const maxDurationSeconds = Math.min(referenceDurationSeconds, candidateDurationSeconds);
+
 				if (
 					shouldAbort() &&
 					finalizeVmafJobIfCancelled(
@@ -665,169 +638,214 @@ export async function runVmafPhaseForJob(
 						nowMs(),
 					)
 				) {
-					return null;
+					vmafPhaseCancelled = true;
+					return buildSkippedVmafRow(candidate, "vmaf_failed", dimensions.width, dimensions.height);
 				}
-				const row = buildSkippedVmafRow(
-					candidate,
-					"download_failed",
-					dimensions.width,
-					dimensions.height,
-				);
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
-				logVmafCandidateSkipped(jobId, candidate, index, "download_failed", {
-					err: candidateDownload.error,
+
+				const candidateDownload = await downloadFn(candidate.url, {
+					signal: abortContext.downloadSignal,
+					timeoutMs: deps.config.probe.downloadTimeoutMs,
 				});
-				continue;
-			}
-
-			log.info(
-				{
-					jobId: jobId,
-					phase: "vmaf_candidate_download",
-					step: "done",
-					candidateIndex: index,
-					candidateLabel: candidate.label,
-					fileSizeBytes: candidateDownload.fileSize,
-				},
-				"vmaf candidate download done",
-			);
-
-			try {
-				const deliveryVmafResult = await runVmafFn(
-					{
-						distortedFilePath: candidateDownload.filePath,
-						referenceFilePath: referenceDownload.filePath,
-						mode: "delivery",
-						deliveryWidth: dimensions.width,
-						deliveryHeight: dimensions.height,
-						maxDurationSeconds: maxDurationSeconds,
-						frameRateFps:
-							includeFrameAnalytics && referenceFrameRateFps > 0
-								? referenceFrameRateFps
-								: undefined,
-						jobId: jobId,
-						shouldAbort: shouldAbort,
-						ffmpegPath: deps.config.ffmpeg.ffmpegPath,
-						ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
-						vmafModel: vmafModel,
-						vmafExecutionMode: vmafExecutionMode,
-					},
-					deps.config,
-				);
-				const vmafAtDelivery = deliveryVmafResult.mean;
-
-				const displayVmafResult = await runVmafFn(
-					{
-						distortedFilePath: candidateDownload.filePath,
-						referenceFilePath: referenceDownload.filePath,
-						mode: "display1080p",
-						maxDurationSeconds: maxDurationSeconds,
-						frameRateFps:
-							includeFrameAnalytics && referenceFrameRateFps > 0
-								? referenceFrameRateFps
-								: undefined,
-						jobId: jobId,
-						shouldAbort: shouldAbort,
-						ffmpegPath: deps.config.ffmpeg.ffmpegPath,
-						ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
-						vmafModel: vmafModel,
-						vmafExecutionMode: vmafExecutionMode,
-					},
-					deps.config,
-				);
-				const vmafAtDisplay1080p = displayVmafResult.mean;
-
-				if (shouldAbort()) {
-					if (vmafAtDelivery !== null || vmafAtDisplay1080p !== null) {
-						const partialRow = buildVmafCandidateRow({
-							candidate: candidate,
-							deliveryWidth: dimensions.width,
-							deliveryHeight: dimensions.height,
-							vmafAtDelivery: vmafAtDelivery,
-							vmafAtDisplay1080p: vmafAtDisplay1080p,
-							deliveryVmafResult: deliveryVmafResult,
-							displayVmafResult: displayVmafResult,
-							includeFrameAnalytics: includeFrameAnalytics,
-						});
-						resultRows.push(partialRow);
-						appendProbeVmafRow(jobId, partialRow);
-					}
-					finalizeVmafJobIfCancelled(
-						jobId,
-						entry.request.caller.videoId,
-						reference.label,
-						vmafModel,
-						startedAtMs,
-						resultRows,
-						nowMs(),
+				if (!candidateDownload.ok) {
+					log.warn(
+						{
+							jobId: jobId,
+							phase: "vmaf_candidate_download",
+							step: "failed",
+							candidateIndex: candidateIndex,
+							candidateLabel: candidate.label,
+							urlHost: resolveProbeUrlHostForLog(candidate.url),
+							err: candidateDownload.error,
+						},
+						"vmaf candidate download failed",
 					);
-					return null;
-				}
-
-				if (vmafAtDelivery === null && vmafAtDisplay1080p === null) {
+					if (
+						shouldAbort() &&
+						finalizeVmafJobIfCancelled(
+							jobId,
+							entry.request.caller.videoId,
+							reference.label,
+							vmafModel,
+							startedAtMs,
+							resultRows,
+							nowMs(),
+						)
+					) {
+						vmafPhaseCancelled = true;
+						return buildSkippedVmafRow(candidate, "vmaf_failed", dimensions.width, dimensions.height);
+					}
 					const row = buildSkippedVmafRow(
 						candidate,
-						"vmaf_failed",
+						"download_failed",
 						dimensions.width,
 						dimensions.height,
 					);
-					resultRows.push(row);
 					appendProbeVmafRow(jobId, row);
-					logVmafCandidateSkipped(jobId, candidate, index, "vmaf_failed", {
-						deliveryFailureReason: deliveryVmafResult.failureReason,
-						displayFailureReason: displayVmafResult.failureReason,
-						deliveryFfmpegExitCode: deliveryVmafResult.ffmpegExitCode,
-						displayFfmpegExitCode: displayVmafResult.ffmpegExitCode,
-						deliveryFfmpegStderrExcerpt: deliveryVmafResult.ffmpegStderrExcerpt,
-						displayFfmpegStderrExcerpt: displayVmafResult.ffmpegStderrExcerpt,
+					logVmafCandidateSkipped(jobId, candidate, candidateIndex, "download_failed", {
+						err: candidateDownload.error,
 					});
-					continue;
+					return row;
 				}
-
-				const vmafFrameAnalytics = await resolveVmafRowFrameAnalytics({
-					jobId: jobId,
-					shopDomain: shopDomain,
-					candidate: candidate,
-					referenceLabel: reference.label,
-					referenceFilePath: referenceDownload.filePath,
-					distortedFilePath: candidateDownload.filePath,
-					deliveryVmafResult: deliveryVmafResult,
-					displayVmafResult: displayVmafResult,
-					includeFrameAnalytics: includeFrameAnalytics,
-					includeScreenshots: includeScreenshots,
-					r2Config: r2Config,
-					shouldAbort: shouldAbort,
-					config: deps.config,
-				});
-
-				const row = buildVmafCandidateRow({
-					candidate: candidate,
-					deliveryWidth: dimensions.width,
-					deliveryHeight: dimensions.height,
-					vmafAtDelivery: vmafAtDelivery,
-					vmafAtDisplay1080p: vmafAtDisplay1080p,
-					deliveryVmafResult: deliveryVmafResult,
-					displayVmafResult: displayVmafResult,
-					includeFrameAnalytics: includeFrameAnalytics,
-					vmafFrameAnalytics: vmafFrameAnalytics,
-				});
-				resultRows.push(row);
-				appendProbeVmafRow(jobId, row);
 
 				log.info(
 					{
 						jobId: jobId,
-						phase: "vmaf_candidate_done",
-						candidateIndex: index,
+						phase: "vmaf_candidate_download",
+						step: "done",
+						candidateIndex: candidateIndex,
 						candidateLabel: candidate.label,
+						fileSizeBytes: candidateDownload.fileSize,
+					},
+					"vmaf candidate download done",
+				);
+
+				try {
+					const frameRateFpsForAnalytics =
+						includeFrameAnalytics && referenceFrameRateFps > 0
+							? referenceFrameRateFps
+							: undefined;
+
+					const [deliveryVmafResult, displayVmafResult] = await Promise.all([
+						runVmafFn(
+							{
+								distortedFilePath: candidateDownload.filePath,
+								referenceFilePath: referenceDownload.filePath,
+								mode: "delivery",
+								deliveryWidth: dimensions.width,
+								deliveryHeight: dimensions.height,
+								maxDurationSeconds: maxDurationSeconds,
+								frameRateFps: frameRateFpsForAnalytics,
+								jobId: jobId,
+								shouldAbort: shouldAbort,
+								ffmpegPath: deps.config.ffmpeg.ffmpegPath,
+								ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
+								vmafModel: vmafModel,
+								vmafExecutionMode: vmafExecutionMode,
+							},
+							deps.config,
+						),
+						runVmafFn(
+							{
+								distortedFilePath: candidateDownload.filePath,
+								referenceFilePath: referenceDownload.filePath,
+								mode: "display1080p",
+								maxDurationSeconds: maxDurationSeconds,
+								frameRateFps: frameRateFpsForAnalytics,
+								jobId: jobId,
+								shouldAbort: shouldAbort,
+								ffmpegPath: deps.config.ffmpeg.ffmpegPath,
+								ffmpegTimeoutMs: deps.config.vmaf.ffmpegTimeoutMs,
+								vmafModel: vmafModel,
+								vmafExecutionMode: vmafExecutionMode,
+							},
+							deps.config,
+						),
+					]);
+					const vmafAtDelivery = deliveryVmafResult.mean;
+					const vmafAtDisplay1080p = displayVmafResult.mean;
+
+					if (shouldAbort()) {
+						if (vmafAtDelivery !== null || vmafAtDisplay1080p !== null) {
+							const partialRow = buildVmafCandidateRow({
+								candidate: candidate,
+								deliveryWidth: dimensions.width,
+								deliveryHeight: dimensions.height,
+								vmafAtDelivery: vmafAtDelivery,
+								vmafAtDisplay1080p: vmafAtDisplay1080p,
+								deliveryVmafResult: deliveryVmafResult,
+								displayVmafResult: displayVmafResult,
+								includeFrameAnalytics: includeFrameAnalytics,
+							});
+							appendProbeVmafRow(jobId, partialRow);
+							return partialRow;
+						}
+						vmafPhaseCancelled = true;
+						finalizeVmafJobIfCancelled(
+							jobId,
+							entry.request.caller.videoId,
+							reference.label,
+							vmafModel,
+							startedAtMs,
+							resultRows,
+							nowMs(),
+						);
+						return buildSkippedVmafRow(candidate, "vmaf_failed", dimensions.width, dimensions.height);
+					}
+
+					if (vmafAtDelivery === null && vmafAtDisplay1080p === null) {
+						const row = buildSkippedVmafRow(
+							candidate,
+							"vmaf_failed",
+							dimensions.width,
+							dimensions.height,
+						);
+						appendProbeVmafRow(jobId, row);
+						logVmafCandidateSkipped(jobId, candidate, candidateIndex, "vmaf_failed", {
+							deliveryFailureReason: deliveryVmafResult.failureReason,
+							displayFailureReason: displayVmafResult.failureReason,
+							deliveryFfmpegExitCode: deliveryVmafResult.ffmpegExitCode,
+							displayFfmpegExitCode: displayVmafResult.ffmpegExitCode,
+							deliveryFfmpegStderrExcerpt: deliveryVmafResult.ffmpegStderrExcerpt,
+							displayFfmpegStderrExcerpt: displayVmafResult.ffmpegStderrExcerpt,
+						});
+						return row;
+					}
+
+					const vmafFrameAnalytics = await resolveVmafRowFrameAnalytics({
+						jobId: jobId,
+						shopDomain: shopDomain,
+						candidate: candidate,
+						referenceLabel: reference.label,
+						referenceFilePath: referenceDownload.filePath,
+						distortedFilePath: candidateDownload.filePath,
+						deliveryVmafResult: deliveryVmafResult,
+						displayVmafResult: displayVmafResult,
+						includeFrameAnalytics: includeFrameAnalytics,
+						includeScreenshots: includeScreenshots,
+						r2Config: r2Config,
+						shouldAbort: shouldAbort,
+						config: deps.config,
+					});
+
+					const row = buildVmafCandidateRow({
+						candidate: candidate,
+						deliveryWidth: dimensions.width,
+						deliveryHeight: dimensions.height,
 						vmafAtDelivery: vmafAtDelivery,
 						vmafAtDisplay1080p: vmafAtDisplay1080p,
-					},
-					"vmaf candidate done",
-				);
-			} finally {
-				await candidateDownload.cleanup();
+						deliveryVmafResult: deliveryVmafResult,
+						displayVmafResult: displayVmafResult,
+						includeFrameAnalytics: includeFrameAnalytics,
+						vmafFrameAnalytics: vmafFrameAnalytics,
+					});
+					appendProbeVmafRow(jobId, row);
+
+					log.info(
+						{
+							jobId: jobId,
+							phase: "vmaf_candidate_done",
+							candidateIndex: candidateIndex,
+							candidateLabel: candidate.label,
+							vmafAtDelivery: vmafAtDelivery,
+							vmafAtDisplay1080p: vmafAtDisplay1080p,
+						},
+						"vmaf candidate done",
+					);
+					return row;
+				} finally {
+					await candidateDownload.cleanup();
+				}
+			},
+		);
+
+		if (vmafPhaseCancelled) {
+			return null;
+		}
+
+		for (let rowIndex = 0; rowIndex < candidateRows.length; rowIndex += 1) {
+			const row = candidateRows[rowIndex];
+			if (row) {
+				resultRows.push(row);
 			}
 		}
 

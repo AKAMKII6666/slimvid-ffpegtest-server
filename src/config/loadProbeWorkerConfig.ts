@@ -102,6 +102,16 @@ function applyEnvOverrides(
 		config.concurrency.maxFfprobeParallel = maxFfprobe;
 	}
 
+	const maxVmafCandidates = parsePositiveInt(env.PROBE_WORKER_MAX_VMAF_CANDIDATES_PARALLEL);
+	if (maxVmafCandidates !== null) {
+		config.concurrency.maxVmafCandidatesParallel = maxVmafCandidates;
+	}
+
+	const vmafNThreads = parsePositiveInt(env.PROBE_WORKER_VMAF_N_THREADS);
+	if (vmafNThreads !== null) {
+		config.vmaf.nThreads = vmafNThreads;
+	}
+
 	const useGpu = parseBooleanEnv(env.PROBE_WORKER_VMAF_USE_GPU);
 	if (useGpu !== null) {
 		config.vmaf.useGpu = useGpu;

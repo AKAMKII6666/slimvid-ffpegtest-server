@@ -110,7 +110,7 @@ describe("GET /health", function () {
 				libvmafAvailable: boolean;
 				r2Configured: boolean;
 				screenshotsEnabled: boolean;
-				concurrency: { maxVmafJobs: number; maxFfprobeParallel: number };
+				concurrency: { maxVmafJobs: number; maxFfprobeParallel: number; maxVmafCandidatesParallel: number };
 			};
 		};
 
@@ -125,6 +125,7 @@ describe("GET /health", function () {
 		expect(body.data.screenshotsEnabled).toBe(true);
 		expect(body.data.concurrency.maxVmafJobs).toBe(1);
 		expect(body.data.concurrency.maxFfprobeParallel).toBe(4);
+		expect(body.data.concurrency.maxVmafCandidatesParallel).toBe(2);
 
 		await app.close();
 	});

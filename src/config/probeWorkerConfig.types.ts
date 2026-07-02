@@ -26,6 +26,7 @@ export interface IProbeWorkerAuthConfig {
 export interface IProbeWorkerConcurrencyConfig {
 	maxVmafJobs: number;
 	maxFfprobeParallel: number;
+	maxVmafCandidatesParallel: number;
 }
 
 export interface IProbeWorkerVmafConfig {
@@ -34,6 +35,7 @@ export interface IProbeWorkerVmafConfig {
 	model: string;
 	ffmpegTimeoutMs: number;
 	gpuUnavailablePolicy: TProbeWorkerGpuUnavailablePolicy;
+	nThreads: number;
 }
 
 export interface IProbeWorkerScreenshotsConfig {

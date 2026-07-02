@@ -11,6 +11,7 @@ const vmafOnlyConfig = {
 	concurrency: {
 		maxVmafJobs: 1,
 		maxFfprobeParallel: 4,
+		maxVmafCandidatesParallel: 2,
 	},
 };
 

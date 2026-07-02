@@ -4,3 +4,4 @@ dist/
 config/probe-worker.local.json
 *.log
 .probeWorkerPinoLogs/
+.probe-vmaf-logs/

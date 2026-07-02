@@ -3,11 +3,8 @@
  * 模块说明：本地 distorted + reference 文件跑 libvmaf；可注入 spawn 供单测。
  */
 
-import { readFile, unlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 
 import type { IProbeWorkerEffectiveConfig } from "../../config/probeWorkerConfig.types.js";
 import type { TVmafExecutionMode } from "../ffmpeg/probeRuntimeCapabilities.js";
@@ -17,6 +14,9 @@ import {
 	buildVmafFfmpegFullFilter,
 	type TVmafFfmpegMode,
 } from "./buildVmafFfmpegFilterGraph.js";
+import {
+	prepareVmafFfmpegLogTarget,
+} from "./prepareVmafFfmpegLogTarget.js";
 import {
 	buildVmafFfmpegCudaGlobalArgs,
 	buildVmafFfmpegCudaPerInputArgs,
@@ -72,6 +72,7 @@ export type TRunVmafPairFfmpegSpawner = (
 		jobId?: string;
 		shouldAbort?: () => boolean;
 		timeoutMs?: number;
+		cwd?: string;
 	},
 ) => Promise<{ exitCode: number; stderr: string }>;
 
@@ -115,6 +116,7 @@ async function defaultRunVmafPairFfmpegSpawner(
 		jobId?: string;
 		shouldAbort?: () => boolean;
 		timeoutMs?: number;
+		cwd?: string;
 	},
 ): Promise<{ exitCode: number; stderr: string }> {
 	if (options?.shouldAbort?.()) {
@@ -124,6 +126,7 @@ async function defaultRunVmafPairFfmpegSpawner(
 	return new Promise(function (resolve, reject): void {
 		const child = spawn(command, args, {
 			stdio: ["ignore", "ignore", "pipe"],
+			cwd: options?.cwd,
 		});
 
 		if (options?.jobId) {
@@ -189,7 +192,8 @@ export async function runVmafPairWithFfmpeg(
 	const vmafModel = input.vmafModel ?? config?.vmaf.model ?? DEFAULT_VMAF_MODEL_VERSION;
 	const vmafExecutionMode = input.vmafExecutionMode ?? "cpu";
 	const gpuDeviceId = config?.vmaf.gpuDeviceId ?? 0;
-	const logPath = join(tmpdir(), "slimvid-vmaf-" + randomUUID() + ".json");
+	const nThreads = config?.vmaf.nThreads ?? 0;
+	const logTarget = await prepareVmafFfmpegLogTarget();
 
 	const filter = buildVmafFfmpegFullFilter(
 		{
@@ -198,8 +202,9 @@ export async function runVmafPairWithFfmpeg(
 			deliveryHeight: input.deliveryHeight,
 			executionMode: vmafExecutionMode,
 		},
-		logPath,
+		logTarget.logPathForFilter,
 		vmafModel,
+		{ nThreads: nThreads },
 	);
 
 	const args: string[] = ["-hide_banner", "-loglevel", "error"];
@@ -247,6 +252,7 @@ export async function runVmafPairWithFfmpeg(
 			jobId: input.jobId,
 			shouldAbort: input.shouldAbort,
 			timeoutMs: ffmpegTimeoutMs,
+			cwd: logTarget.ffmpegCwd,
 		});
 		if (result.exitCode !== 0) {
 			return buildVmafFfmpegFailureResult({
@@ -259,7 +265,7 @@ export async function runVmafPairWithFfmpeg(
 
 		let jsonText: string;
 		try {
-			jsonText = await readFile(logPath, "utf8");
+			jsonText = await readFile(logTarget.absoluteLogPath, "utf8");
 		} catch (readErr: unknown) {
 			const message = readErr instanceof Error ? readErr.message : String(readErr);
 			return buildVmafFfmpegFailureResult({
@@ -314,8 +320,6 @@ export async function runVmafPairWithFfmpeg(
 			input: input,
 		});
 	} finally {
-		await unlink(logPath).catch(function (): void {
-			// 忽略清理失败
-		});
+		await logTarget.cleanup();
 	}
 }

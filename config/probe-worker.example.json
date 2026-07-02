@@ -9,14 +9,16 @@
   },
   "concurrency": {
     "maxVmafJobs": 1,
-    "maxFfprobeParallel": 4
+    "maxFfprobeParallel": 4,
+    "maxVmafCandidatesParallel": 2
   },
   "vmaf": {
     "useGpu": false,
     "gpuDeviceId": 0,
     "model": "vmaf_v0.6.1",
     "ffmpegTimeoutMs": 600000,
-    "gpuUnavailablePolicy": "fallback_cpu"
+    "gpuUnavailablePolicy": "fallback_cpu",
+    "nThreads": 0
   },
   "screenshots": {
     "enabled": true,

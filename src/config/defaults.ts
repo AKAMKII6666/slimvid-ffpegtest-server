@@ -19,6 +19,7 @@ export const PROBE_WORKER_DEFAULT_CONFIG: IProbeWorkerConfigFile = {
 	concurrency: {
 		maxVmafJobs: 1,
 		maxFfprobeParallel: 4,
+		maxVmafCandidatesParallel: 2,
 	},
 	vmaf: {
 		useGpu: false,
@@ -26,6 +27,7 @@ export const PROBE_WORKER_DEFAULT_CONFIG: IProbeWorkerConfigFile = {
 		model: "vmaf_v0.6.1",
 		ffmpegTimeoutMs: 600_000,
 		gpuUnavailablePolicy: "fallback_cpu",
+		nThreads: 0,
 	},
 	screenshots: {
 		enabled: true,

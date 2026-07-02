@@ -131,19 +131,37 @@ export function buildVmafFfmpegFilterGraph(input: IBuildVmafFfmpegFilterGraphInp
 
 /**
  * libvmaf log_path 在 ffmpeg -lavfi 中的转义。
- * Windows 须先将反斜杠规范为 /，再仅对冒号转义（盘符 C:）；勿对 \ 双重转义。
+ * 推荐仅传相对文件名（无 `:`）；绝对路径仍做 / 与冒号转义以兼容 Unix。
  */
 export function escapeLibvmafFfmpegLogPath(logPath: string): string {
-	const normalized = logPath.trim().replace(/\\/g, "/");
+	const trimmed = logPath.trim();
+	if (trimmed === "") {
+		return trimmed;
+	}
+	if (!trimmed.includes(":") && !trimmed.includes("\\") && !trimmed.includes("/")) {
+		return trimmed;
+	}
+	const normalized = trimmed.replace(/\\/g, "/");
 	return normalized.replace(/:/g, "\\:");
+}
+
+export interface IBuildVmafFfmpegFullFilterOptions {
+	nThreads?: number;
 }
 
 export function buildVmafFfmpegFullFilter(
 	input: IBuildVmafFfmpegFilterGraphInput,
 	logPath: string,
 	vmafModel: string,
+	options?: IBuildVmafFfmpegFullFilterOptions,
 ): string {
 	const base = buildVmafFfmpegFilterGraph(input);
 	const escapedLogPath = escapeLibvmafFfmpegLogPath(logPath);
-	return base + "=model=version=" + vmafModel + ":log_fmt=json:log_path=" + escapedLogPath;
+	let suffix = "=model=version=" + vmafModel;
+	const nThreads = options?.nThreads;
+	if (typeof nThreads === "number" && Number.isFinite(nThreads) && nThreads >= 0) {
+		suffix += ":n_threads=" + String(Math.floor(nThreads));
+	}
+	suffix += ":log_fmt=json:log_path=" + escapedLogPath;
+	return base + suffix;
 }

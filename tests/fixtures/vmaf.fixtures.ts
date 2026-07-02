@@ -111,4 +111,13 @@ export const MOCK_VMAF_DEPS_BASE = {
 	isLibvmafAvailableFn: async function mockLibvmaf(): Promise<boolean> {
 		return true;
 	},
+	probeRuntimeCapabilitiesFn: async function mockRuntimeCapabilities() {
+		return {
+			ffmpegAvailable: true,
+			ffprobeAvailable: true,
+			libvmafAvailable: true,
+			libvmafCudaAvailable: false,
+			vmafExecutionMode: "cpu" as const,
+		};
+	},
 };
