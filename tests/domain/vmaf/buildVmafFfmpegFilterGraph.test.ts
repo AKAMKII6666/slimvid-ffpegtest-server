@@ -29,7 +29,7 @@ describe("buildVmafFfmpegFilterGraph", function () {
 		expect(graph).not.toContain("libvmaf_cuda");
 	});
 
-	it("builds CUDA metadata2go upscale chain with scale_cuda", function () {
+	it("builds CUDA metadata2go upscale chain with hwupload_cuda", function () {
 		const graph = buildVmafFfmpegFilterGraph({
 			mode: "metadata2goBicubicUpscale",
 			referenceWidth: 1280,
@@ -37,9 +37,11 @@ describe("buildVmafFfmpegFilterGraph", function () {
 			executionMode: "cuda",
 		});
 
-		expect(graph).toContain("scale_cuda=1280:720:format=yuv420p");
-		expect(graph).toContain("[0:v]scale_cuda=1280:720:format=yuv420p[dist]");
-		expect(graph).toContain("[1:v]scale_cuda=format=yuv420p[ref]");
+		expect(graph).toContain(
+			"[0:v]scale=1280:720:flags=bicubic,format=yuv420p,hwupload_cuda[dist]",
+		);
+		expect(graph).toContain("[1:v]format=yuv420p,hwupload_cuda[ref]");
+		expect(graph).not.toContain("scale_cuda");
 		expect(graph).not.toContain("setpts");
 		expect(graph).toContain("[dist][ref]" + VMAF_FFMPEG_FILTER_CUDA);
 	});

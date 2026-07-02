@@ -116,7 +116,7 @@ export async function runVmafPairWithFfmpeg(
 	const vmafModel = input.vmafModel ?? config?.vmaf.model ?? DEFAULT_VMAF_MODEL_VERSION;
 	const vmafExecutionMode = input.vmafExecutionMode ?? "cpu";
 	const gpuDeviceId = config?.vmaf.gpuDeviceId ?? 0;
-	const nThreads = config?.vmaf.nThreads ?? 0;
+	const nThreads = vmafExecutionMode === "cuda" ? undefined : config?.vmaf.nThreads ?? 0;
 	const logTarget = await prepareVmafFfmpegLogTarget();
 
 	const filter = buildVmafFfmpegFullFilter(

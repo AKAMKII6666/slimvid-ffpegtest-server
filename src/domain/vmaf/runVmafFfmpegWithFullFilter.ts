@@ -7,10 +7,7 @@ import { spawn } from "node:child_process";
 
 import type { TVmafExecutionMode } from "../ffmpeg/probeRuntimeCapabilities.js";
 import { registerVmafFfmpegProcess } from "../ffmpeg/vmafProcessRegistry.memory.js";
-import {
-	buildVmafFfmpegCudaGlobalArgs,
-	buildVmafFfmpegCudaPerInputArgs,
-} from "./buildVmafFfmpegHwaccelArgs.js";
+import { buildVmafFfmpegCudaGlobalArgs } from "./buildVmafFfmpegHwaccelArgs.js";
 
 /** VMAF ffmpeg stderr 累积上限 */
 export const VMAF_FFMPEG_STDERR_MAX_BYTES = 256 * 1024;
@@ -142,14 +139,8 @@ export async function runVmafFfmpegWithFullFilter(
 		args.push("-t", String(input.maxDurationSeconds));
 	}
 
-	if (vmafExecutionMode === "cuda") {
-		args.push(...buildVmafFfmpegCudaPerInputArgs(gpuDeviceId));
-	}
 	args.push("-i", input.distortedFilePath);
 
-	if (vmafExecutionMode === "cuda") {
-		args.push(...buildVmafFfmpegCudaPerInputArgs(gpuDeviceId));
-	}
 	args.push("-i", input.referenceFilePath);
 
 	args.push("-lavfi", input.fullFilter, "-f", "null", "-");

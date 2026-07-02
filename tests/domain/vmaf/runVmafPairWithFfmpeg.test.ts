@@ -11,7 +11,7 @@ afterEach(function (): void {
 });
 
 describe("runVmafPairWithFfmpeg", function () {
-	it("passes CUDA hwaccel args and libvmaf_cuda upscale filter when execution mode is cuda", async function () {
+	it("uses CUDA device args and hwupload_cuda filter when execution mode is cuda", async function () {
 		let capturedArgs: string[] = [];
 
 		setRunVmafPairFfmpegSpawnerForTests(async function (
@@ -42,15 +42,17 @@ describe("runVmafPairWithFfmpeg", function () {
 		expect(capturedArgs).toContain("cuda");
 		expect(capturedArgs.filter(function (arg): boolean {
 			return arg === "-hwaccel";
-		})).toHaveLength(2);
-		expect(capturedArgs).toContain("-hwaccel_device");
-		expect(capturedArgs).toContain("2");
+		})).toHaveLength(0);
+		expect(capturedArgs).not.toContain("-hwaccel_device");
+		expect(capturedArgs).not.toContain("-hwaccel_output_format");
 
 		const lavfiIndex = capturedArgs.indexOf("-lavfi");
 		const filter = lavfiIndex >= 0 ? capturedArgs[lavfiIndex + 1] : "";
 		expect(filter).toContain("libvmaf_cuda");
-		expect(filter).toContain("scale_cuda=1280:720:format=yuv420p");
+		expect(filter).toContain("scale=1280:720:flags=bicubic,format=yuv420p,hwupload_cuda");
+		expect(filter).not.toContain("scale_cuda");
 		expect(filter).not.toContain("setpts");
+		expect(filter).not.toContain("n_threads");
 	});
 
 	it("uses CPU libvmaf upscale filter without hwaccel args by default", async function () {

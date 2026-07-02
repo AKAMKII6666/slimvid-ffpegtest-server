@@ -54,12 +54,12 @@ function buildMetadata2goBicubicUpscaleCudaFilterGraph(
 	const height = Math.round(referenceHeight);
 
 	return (
-		"[0:v]scale_cuda=" +
+		"[0:v]scale=" +
 		String(width) +
 		":" +
 		String(height) +
-		":format=yuv420p[dist];" +
-		"[1:v]scale_cuda=format=yuv420p[ref];" +
+		":flags=bicubic,format=yuv420p,hwupload_cuda[dist];" +
+		"[1:v]format=yuv420p,hwupload_cuda[ref];" +
 		"[dist][ref]" +
 		vmafFilter
 	);
