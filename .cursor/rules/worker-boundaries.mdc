@@ -1,0 +1,48 @@
+---
+description: HTTP handler、job 编排与 domain 分层
+globs:
+  - "src/**/*.ts"
+alwaysApply: false
+---
+
+# Worker 分层边界
+
+## 数据流
+
+```text
+主 app BFF → HTTP POST/GET → route handler → job store → worker 循环
+                                              → domain（ffprobe / download / vmaf）
+                                              → spawn ffmpeg / ffprobe
+```
+
+## HTTP 层（`src/http/` 或 `src/routes/`）
+
+- 只做：鉴权、解析 body/query、调用 `build*Response`、返回 JSON。
+- 统一响应：`{ ok: true, data } | { ok: false, error }`；校验失败不返回 HTML。
+- Action body：**运行时**逐字段校验，禁止仅 `as IXxx`（见 `examples/parse-job-body.example.server.ts`）。
+
+## Domain 层（`src/domain/`）
+
+- job 状态机、ffprobe 编排、VMAF candidate 循环、partial report 组装。
+- 跨 route 复用的 parse / guard / mapper 放 domain，不在多个 handler 复制。
+- ffmpeg 执行通过可注入 spawner，便于单测。
+
+## Job Store（`src/job/`）
+
+- 只保存 job 状态与 snapshot；不发 HTTP、不 spawn 进程。
+- 单进程内存 store 为 V1 默认；多实例部署时再引入 Redis 等（须文档化 cancel 与锁语义）。
+
+## 禁止
+
+- handler 内大段 ffmpeg 参数拼接（抽到 `src/domain/ffmpeg/` 或 `src/vmaf/`）。
+- domain import HTTP 框架类型（保持可单测）。
+- 为对齐主 app 而 import 主 app 路径；须在本仓 `src/types/` mirror 复写。
+
+## 与主 app 关系
+
+| 本 worker | 主 app |
+|-----------|--------|
+| 执行 ffprobe + libvmaf | BFF 发 spec、poll、fallback 本机 |
+| 产出 Wire 形 DTO | 消费 JSON，写入 batch report |
+
+字段对齐见 `probe-compute-contract.mdc`。

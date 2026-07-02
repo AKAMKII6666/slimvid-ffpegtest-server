@@ -1,0 +1,53 @@
+---
+description: ffprobe、libvmaf 子进程、并发与 cancel
+globs:
+  - "src/**/ffmpeg/**/*.ts"
+  - "src/**/vmaf/**/*.ts"
+  - "src/**/probe/**/*.ts"
+  - "src/domain/**/*ffmpeg*.ts"
+  - "src/domain/**/*probe*.ts"
+  - "src/domain/**/*vmaf*.ts"
+alwaysApply: false
+---
+
+# FFmpeg / VMAF 运行时
+
+行为对齐主 app `app/server/dashboard/dev/`（probe、runVmafPairWithFfmpeg、filter graph）。
+
+## 依赖
+
+- 系统 `ffmpeg` / `ffprobe` 在 PATH。
+- VMAF 须 **libvmaf**（`ffmpeg -filters 2>&1 | grep libvmaf`）；启动时可探测并 fail fast。
+- GPU（`libvmaf_cuda`）由配置 `vmaf.useGpu` 请求；启动探测后见 `vmafExecutionMode`（见 [configuration.md](../../docs/AI与人类/configuration.md)）。默认 CPU `libvmaf` 滤镜链。
+
+## ffprobe
+
+- 远程 URL：`-probesize` / `-analyzeduration` 限制读取；单 URL 超时（主 app 参考 45s）。
+- HEAD 取 `Content-Length` 等提示；失败语义与主 app `probeVideoUrlMetadata` 一致。
+
+## libvmaf
+
+- delivery / display1080p 两种 mode；filter graph 见主 app `buildDevVideoVmafFfmpegFilterGraph.server.ts`。
+- 单次 ffmpeg 超时（主 app 参考 600s）；stderr 累积上限防内存膨胀。
+- `log_fmt=json` 同时产出 mean 与逐帧 analytics（无额外 libvmaf 遍数）。
+
+## Cancel
+
+- cancel 须：abort 在途下载 + SIGKILL 已登记 ffmpeg 子进程。
+- cancel 中途若已有 delivery/display 分数，partial row 保留，不写误导性 `vmaf_failed`。
+
+## 并发
+
+- 默认 **candidate / mode 串行**（与主 app V1 一致）；并行上限来自配置 `concurrency.maxVmafJobs` / `maxFfprobeParallel`（env 可覆盖，见 [configuration.md](../../docs/AI与人类/configuration.md)）。提高并行时须：
+  - 限制同时 spawn 数；
+  - 估算内存（每路 distorted 文件 + reference 共享）；
+  - 单测或集成测试覆盖 race cancel。
+
+## 临时文件
+
+- 下载至系统 tmp；job 结束或 cancel 后 `cleanup`；忽略 unlink 失败但勿泄漏句柄。
+
+## 测试
+
+- spawner 注入测 exitCode、timeout、cancel。
+- 纯函数：filter graph 字符串、JSON 解析、frame analytics segment 合并 — 须有 unit test。

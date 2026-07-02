@@ -1,0 +1,45 @@
+---
+description: Dev Probe Worker 修改后的检查、测试与质量门禁
+alwaysApply: true
+---
+
+# 测试与质量门禁
+
+## 用例位置
+
+- Vitest 用例放在仓库根目录 `tests/`，按功能模块分子目录（与 `src/` 对应）。
+- **禁止**在 `src/**` 内新增 `*.test.ts`；被测源码按项目 alias（如 `@worker/...`）导入。
+
+## 修改后验证
+
+- 修改 TypeScript 后运行 `npm run typecheck`。
+- 修改受 ESLint 管理的源码后运行 `npm run lint`。
+- 修改 job 状态机、**https URL 校验**、请求体解析、VMAF/ffprobe 解析或 ffmpeg 编排时，必须补充或更新测试。
+- 修复缺陷时优先增加能够复现缺陷的回归测试。
+- 若检查因环境或现有配置无法运行，必须明确报告，不得声称已经通过。
+
+## 禁止事项
+
+- 禁止通过关闭 `strict`、跳过目标目录或大范围 `eslint-disable` 让检查通过。
+- `eslint-disable` 必须限制到最小范围并说明原因。
+- 禁止为了通过检查进行无关格式化、重构或行为修改。
+- 禁止删除现有测试来掩盖失败。
+
+## 可不写测试的情况
+
+- 纯文案、注释调整，且不改变运行时逻辑。
+- 与当前任务无关的格式化或 import 顺序整理。
+- 上述情况仍须运行 typecheck/lint（若触及 TS/ESLint 范围）。
+
+## 高风险契约
+
+以下区域修改时必须优先增加契约测试：
+
+- Job 创建 / poll / cancel 状态机与终态语义（含 partial report）。
+- **https URL scheme** 校验与 SSRF 防护（Bearer 鉴权 + 仅 https，无 CDN 域名白名单）。
+- ffprobe JSON → 元数据映射。
+- libvmaf JSON → mean / 逐帧 analytics 解析。
+- ffmpeg 子进程登记与 cancel SIGKILL。
+- 与主 app Wire DTO 字段对齐（breaking change 须显式文档化）。
+
+最终报告应列出已运行的检查、结果和未覆盖风险。

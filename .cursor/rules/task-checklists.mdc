@@ -1,0 +1,34 @@
+---
+description: 新增 HTTP API、job 类型与 DTO 变更时的迷你检查清单（按需 @ 引用）
+alwaysApply: false
+---
+
+# 任务迷你检查清单
+
+## 新增 HTTP 端点
+
+- [ ] handler 保持薄；parse/guard/编排落点符合 `worker-boundaries.mdc`
+- [ ] 请求体运行时 guard（非仅 `as` 断言）
+- [ ] 鉴权（Bearer）；视频 URL 仅 **https:**（见 `security-and-trust.mdc`）
+- [ ] 响应 `{ ok, data \| error }`；错误不含堆栈
+- [ ] 运行 `npm run typecheck`；改状态机或解析器运行 `npm run test`
+
+## 新增或修改 job 类型
+
+- [ ] 状态机：pending / running / ready / failed / cancelled
+- [ ] cancel 不可逆；partial report 语义见 `probe-compute-contract.mdc`
+- [ ] 与主 app Wire DTO 字段对齐或文档化 breaking change
+- [ ] ffmpeg 子进程登记供 cancel SIGKILL
+- [ ] 补充 `tests/` 契约或回归用例
+
+## 从主 app 移植算法
+
+- [ ] 对照 `slimvid-shopify-app/app/server/dashboard/dev/` 行为
+- [ ] 单测覆盖差异点（https URL 校验、skipReason、filter graph、JSON 解析）
+- [ ] 不在本仓库 import 主 app 路径
+
+## 联调主 app
+
+- [ ] 主 app env `SLIMVID_DEV_PROBE_WORKER_URL` 文档化
+- [ ] fallback 本机路径仍可用
+- [ ] 主 app `docs/AI与人类/工程/前端/dev-video-compress-compare.md` 更新接线（人类/后续任务）

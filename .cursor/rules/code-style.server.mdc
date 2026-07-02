@@ -1,0 +1,27 @@
+---
+description: HTTP handler、domain 与 job 模块可读性规则
+globs:
+  - "src/**/*.ts"
+alwaysApply: false
+---
+
+# 代码风格（服务端）
+
+TypeScript 通用规则见 `code-style.mdc`。安全与日志见 `security-and-trust.mdc`；分层见 `worker-boundaries.mdc`。
+
+## 默认执行
+
+- 较长 domain 文件可用 `//===============分区名===============` 分隔；短文件不必空分区。
+- Legacy 或未接入文件须在头注释标 `@legacy` 及原因。
+
+## 必须执行
+
+- 导出 guard、mapper、build 函数须 JSDoc 说明输入可信来源与失败语义。
+- 使用结构化 logger；禁止 ad-hoc `console.log`（本地冒烟除外且须注释）。
+
+| 反例 | 正例 |
+|------|------|
+| `console.log("[job]", payload)` | `log.info({ jobId, phase }, "job tick")` |
+| `const body = await request.json() as IJobSpec` | `parseJobSpecBody(raw)` 逐字段校验 |
+
+示例见 `examples/parse-job-body.example.server.ts`、`examples/server-service.example.server.ts`。

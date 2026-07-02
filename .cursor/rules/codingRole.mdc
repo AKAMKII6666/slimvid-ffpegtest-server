@@ -1,0 +1,43 @@
+---
+description: Dev Probe Compute Worker 核心工程边界与规则索引
+alwaysApply: true
+---
+
+# Dev Probe Compute Worker 核心工程规则
+
+手写规范；与通用建议冲突时，以本项目规则和 `规则制定原则.mdc` 为准。
+
+## 必须执行
+
+- 调用方（主 app BFF）提交的 URL、job 参数、Header 全部视为不可信；须运行时 guard；视频 URL 仅允许 **`https:`**（见 `security-and-trust.mdc`）。
+- HTTP route handler 保持薄；job 编排、ffprobe、libvmaf、下载进 `src/domain/` 或 `src/worker/`。
+- 禁止 `index.ts` barrel 聚合 re-export；直引具体文件。
+- job cancel 后不得 spawn 新 ffmpeg、不得将终态写回 `ready`、不得复活已取消 job。
+- 修改必须聚焦当前任务；不擅自补完、删除或重构无关代码。
+- 修改前先阅读相关模块、主 app 对照实现与 `.cursor/rules/`；业务文档在 `docs/` 逐步补齐，Agent 不得臆造未文档化的对外字段。
+- 规则用于约束新增和本次修改的代码；不得仅因未触碰的遗留代码不符合新规则而扩大任务范围。
+
+## 默认执行
+
+- 复杂逻辑显式展开，优先便于断点调试和定位分支。
+- 新增模块遵循现有目录和命名模式；ffprobe/VMAF 逻辑优先从主 app `app/server/dashboard/dev/` 移植并对齐行为，而非重写语义。
+- 抽取公共逻辑前确认存在真实复用或稳定职责边界。
+- 大文件不是独立缺陷；仅在新增职责或修改风险明显时拆分（HTTP 编排建议 <350 行）。
+- ffmpeg `spawn` 须可注入 spawner，供单测 mock 退出码与 stderr。
+
+## 领域规则索引
+
+| 文件 | 触发 |
+|------|------|
+| `规则制定原则.mdc` | 始终 |
+| `codingRole.mdc` | 始终 |
+| `testing-and-quality.mdc` | 始终 |
+| `code-style.mdc` | `src/**/*.ts` |
+| `code-style.server.mdc` | `src/**/*.ts` |
+| `worker-boundaries.mdc` | `src/**/*.ts` |
+| `probe-compute-contract.mdc` | `src/**/*.ts`、`docs/**` |
+| `ffmpeg-runtime.mdc` | `src/**/ffmpeg/**`、`src/**/vmaf/**`、`src/**/probe/**` |
+| `security-and-trust.mdc` | `src/**/*.ts` |
+| `task-checklists.mdc` | 按需 @ 引用 |
+
+代码示例见 `.cursor/rules/examples/`。
