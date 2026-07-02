@@ -58,8 +58,8 @@ function buildMetadata2goBicubicUpscaleCudaFilterGraph(
 		String(width) +
 		":" +
 		String(height) +
-		":format=yuv420p,setpts=PTS-STARTPTS[dist];" +
-		"[1:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS[ref];" +
+		":format=yuv420p[dist];" +
+		"[1:v]scale_cuda=format=yuv420p[ref];" +
 		"[dist][ref]" +
 		vmafFilter
 	);

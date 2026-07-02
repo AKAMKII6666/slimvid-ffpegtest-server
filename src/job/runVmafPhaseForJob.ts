@@ -29,7 +29,10 @@ import {
 	runVmafPairWithFfmpeg,
 	type IRunVmafPairWithFfmpegResult,
 } from "../domain/vmaf/runVmafPairWithFfmpeg.js";
-import { resolveVmafJobExecutionMode } from "../domain/vmaf/resolveVmafJobExecutionMode.js";
+import {
+	resolveVmafCandidateParallelism,
+	resolveVmafJobExecutionMode,
+} from "../domain/vmaf/resolveVmafJobExecutionMode.js";
 import { createVmafAbortContext } from "../domain/vmaf/vmafAbortContext.helpers.js";
 import type {
 	IDevVideoCompressCompareVmafReport,
@@ -349,6 +352,10 @@ export async function runVmafPhaseForJob(
 			deps.config,
 			runtimeCapabilities,
 		);
+		const candidateParallelism = resolveVmafCandidateParallelism(
+			deps.config,
+			vmafExecutionMode,
+		);
 
 		log.info(
 			{
@@ -357,6 +364,9 @@ export async function runVmafPhaseForJob(
 				libvmafAvailable: runtimeCapabilities.libvmafAvailable,
 				libvmafCudaAvailable: runtimeCapabilities.libvmafCudaAvailable,
 				vmafExecutionMode: vmafExecutionMode,
+				candidateParallelism: candidateParallelism,
+				configuredMaxVmafCandidatesParallel:
+					deps.config.concurrency.maxVmafCandidatesParallel,
 				candidateCount: candidates.length,
 				includeFrameAnalytics: includeFrameAnalytics,
 				includeScreenshots: includeScreenshots,
@@ -491,7 +501,6 @@ export async function runVmafPhaseForJob(
 			"vmaf reference download done",
 		);
 
-		const candidateParallelism = deps.config.concurrency.maxVmafCandidatesParallel;
 		let vmafPhaseCancelled = false;
 
 		const candidateRows = await mapWithConcurrency(

@@ -8,6 +8,7 @@ import {
 	VMAF_FFMPEG_FILTER_CPU,
 } from "@worker/domain/vmaf/buildVmafFfmpegFilterGraph.js";
 import {
+	resolveVmafCandidateParallelism,
 	resolveVmafJobExecutionMode,
 	VmafGpuUnavailableError,
 } from "@worker/domain/vmaf/resolveVmafJobExecutionMode.js";
@@ -37,8 +38,9 @@ describe("buildVmafFfmpegFilterGraph", function () {
 		});
 
 		expect(graph).toContain("scale_cuda=1280:720:format=yuv420p");
-		expect(graph).toContain("[0:v]scale_cuda=1280:720:format=yuv420p,setpts=PTS-STARTPTS[dist]");
-		expect(graph).toContain("[1:v]scale_cuda=format=yuv420p,setpts=PTS-STARTPTS[ref]");
+		expect(graph).toContain("[0:v]scale_cuda=1280:720:format=yuv420p[dist]");
+		expect(graph).toContain("[1:v]scale_cuda=format=yuv420p[ref]");
+		expect(graph).not.toContain("setpts");
 		expect(graph).toContain("[dist][ref]" + VMAF_FFMPEG_FILTER_CUDA);
 	});
 
@@ -131,5 +133,37 @@ describe("resolveVmafJobExecutionMode", function () {
 				{ libvmafCudaAvailable: false },
 			);
 		}).toThrow(VmafGpuUnavailableError);
+	});
+});
+
+describe("resolveVmafCandidateParallelism", function () {
+	it("forces serial candidate runs when execution mode is cuda", function () {
+		expect(
+			resolveVmafCandidateParallelism(
+				{
+					...PROBE_WORKER_DEFAULT_CONFIG,
+					concurrency: {
+						...PROBE_WORKER_DEFAULT_CONFIG.concurrency,
+						maxVmafCandidatesParallel: 4,
+					},
+				},
+				"cuda",
+			),
+		).toBe(1);
+	});
+
+	it("uses configured maxVmafCandidatesParallel for cpu mode", function () {
+		expect(
+			resolveVmafCandidateParallelism(
+				{
+					...PROBE_WORKER_DEFAULT_CONFIG,
+					concurrency: {
+						...PROBE_WORKER_DEFAULT_CONFIG.concurrency,
+						maxVmafCandidatesParallel: 3,
+					},
+				},
+				"cpu",
+			),
+		).toBe(3);
 	});
 });

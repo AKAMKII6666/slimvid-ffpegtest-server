@@ -50,6 +50,7 @@ describe("runVmafPairWithFfmpeg", function () {
 		const filter = lavfiIndex >= 0 ? capturedArgs[lavfiIndex + 1] : "";
 		expect(filter).toContain("libvmaf_cuda");
 		expect(filter).toContain("scale_cuda=1280:720:format=yuv420p");
+		expect(filter).not.toContain("setpts");
 	});
 
 	it("uses CPU libvmaf upscale filter without hwaccel args by default", async function () {
