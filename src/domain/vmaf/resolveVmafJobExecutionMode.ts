@@ -41,16 +41,11 @@ export function resolveVmafJobExecutionMode(
 }
 
 /**
- * CUDA libvmaf_cuda 不支持多路并行；忽略 concurrency.maxVmafCandidatesParallel。
+ * 解析单 job 内 candidate libvmaf 并行度；CPU / CUDA 共用 concurrency.maxVmafCandidatesParallel。
  */
 export function resolveVmafCandidateParallelism(
 	config: Pick<IProbeWorkerEffectiveConfig, "concurrency">,
-	vmafExecutionMode: TVmafExecutionMode,
 ): number {
-	if (vmafExecutionMode === "cuda") {
-		return 1;
-	}
-
 	const configured = config.concurrency.maxVmafCandidatesParallel;
 	if (typeof configured === "number" && configured >= 1) {
 		return Math.floor(configured);

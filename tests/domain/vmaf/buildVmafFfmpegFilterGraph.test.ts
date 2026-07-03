@@ -139,33 +139,30 @@ describe("resolveVmafJobExecutionMode", function () {
 });
 
 describe("resolveVmafCandidateParallelism", function () {
-	it("forces serial candidate runs when execution mode is cuda", function () {
+	it("uses configured maxVmafCandidatesParallel", function () {
 		expect(
-			resolveVmafCandidateParallelism(
-				{
-					...PROBE_WORKER_DEFAULT_CONFIG,
-					concurrency: {
-						...PROBE_WORKER_DEFAULT_CONFIG.concurrency,
-						maxVmafCandidatesParallel: 4,
-					},
+			resolveVmafCandidateParallelism({
+				...PROBE_WORKER_DEFAULT_CONFIG,
+				concurrency: {
+					...PROBE_WORKER_DEFAULT_CONFIG.concurrency,
+					maxVmafCandidatesParallel: 3,
 				},
-				"cuda",
-			),
-		).toBe(1);
+			}),
+		).toBe(3);
 	});
 
-	it("uses configured maxVmafCandidatesParallel for cpu mode", function () {
+	it("defaults to 1 when maxVmafCandidatesParallel is missing or invalid", function () {
+		expect(resolveVmafCandidateParallelism(PROBE_WORKER_DEFAULT_CONFIG)).toBe(
+			PROBE_WORKER_DEFAULT_CONFIG.concurrency.maxVmafCandidatesParallel,
+		);
 		expect(
-			resolveVmafCandidateParallelism(
-				{
-					...PROBE_WORKER_DEFAULT_CONFIG,
-					concurrency: {
-						...PROBE_WORKER_DEFAULT_CONFIG.concurrency,
-						maxVmafCandidatesParallel: 3,
-					},
+			resolveVmafCandidateParallelism({
+				...PROBE_WORKER_DEFAULT_CONFIG,
+				concurrency: {
+					...PROBE_WORKER_DEFAULT_CONFIG.concurrency,
+					maxVmafCandidatesParallel: 0,
 				},
-				"cpu",
-			),
-		).toBe(3);
+			}),
+		).toBe(1);
 	});
 });

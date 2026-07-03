@@ -352,10 +352,7 @@ export async function runVmafPhaseForJob(
 			deps.config,
 			runtimeCapabilities,
 		);
-		const candidateParallelism = resolveVmafCandidateParallelism(
-			deps.config,
-			vmafExecutionMode,
-		);
+		const candidateParallelism = resolveVmafCandidateParallelism(deps.config);
 
 		log.info(
 			{
