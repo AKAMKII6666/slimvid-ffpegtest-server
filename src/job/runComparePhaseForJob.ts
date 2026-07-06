@@ -1,9 +1,10 @@
 /**
  * 模块名称：Compare 阶段执行器
- * 模块说明：并行 ffprobe 各 rendition；任一失败则抛错（整 job failed）。
+ * 模块说明：并行 ffprobe 各 rendition；HLS/m3u8 跳过；非 HLS 任一失败则整 job failed。
  */
 
 import type { IProbeWorkerEffectiveConfig } from "../config/probeWorkerConfig.types.js";
+import { isSkippableHlsProbeTarget } from "../domain/probe/isSkippableHlsProbeTarget.js";
 import { createModuleLogger } from "../logging/createModuleLogger.js";
 import { resolveProbeUrlHostForLog } from "../logging/resolveProbeUrlHostForLog.helpers.js";
 import {
@@ -15,6 +16,7 @@ import type { IDevVideoCompressCompareRendition } from "../types/devVideoCompare
 import {
 	appendProbeCompareRendition,
 	getProbeComputeJobMutableEntry,
+	incrementProbeCompareCompletedRenditions,
 	setProbeComputeCompareResult,
 } from "./probeComputeJobStore.memory.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
@@ -47,12 +49,32 @@ export async function runComparePhaseForJob(
 	const ffprobeTimeoutMs = deps.config.probe.ffprobeTimeoutMs;
 	const parallelism = deps.config.concurrency.maxFfprobeParallel;
 
-	const renditions = await mapWithConcurrency(
+	const probeResults = await mapWithConcurrency(
 		compare.renditions,
 		parallelism,
-		async function probeRendition(rendition, renditionIndex): Promise<IDevVideoCompressCompareRendition> {
+		async function probeRendition(
+			rendition,
+			renditionIndex,
+		): Promise<IDevVideoCompressCompareRendition | null> {
 			if (entry.cancelRequested) {
 				throw new Error("Compare phase cancelled");
+			}
+
+			if (isSkippableHlsProbeTarget({ url: rendition.url, label: rendition.label })) {
+				incrementProbeCompareCompletedRenditions(jobId);
+				log.info(
+					{
+						jobId: jobId,
+						phase: "compare_probe_rendition_skipped",
+						skipReason: "hls",
+						renditionIndex: renditionIndex,
+						renditionLabel: rendition.label,
+						renditionGroup: rendition.group,
+						urlHost: resolveProbeUrlHostForLog(rendition.url),
+					},
+					"compare probe rendition skipped (hls)",
+				);
+				return null;
 			}
 
 			log.info(
@@ -126,6 +148,12 @@ export async function runComparePhaseForJob(
 			}
 		},
 	);
+
+	const renditions = probeResults.filter(function keepProbed(
+		row,
+	): row is IDevVideoCompressCompareRendition {
+		return row !== null;
+	});
 
 	const compareResult: IProbeComputeCompareResult = {
 		productName: compare.productName,

@@ -3,6 +3,7 @@
  * 模块说明：从 Shopify drafts + SlimVID URL 构建列表；HLS skip 等运行时规则。
  */
 
+import { isSkippableHlsProbeTarget } from "../probe/isSkippableHlsProbeTarget.js";
 import type { TDevVideoCompressCompareRenditionGroup } from "../../types/devVideoCompare.types.js";
 
 export interface IVmafCandidateDraft {
@@ -40,19 +41,7 @@ export const VMAF_REFERENCE_LABEL = "Original source";
 export function isVmafCandidateSkippableAsHls(
 	draft: Pick<IVmafCandidateDraft, "url" | "formatHint" | "mimeType">,
 ): boolean {
-	const urlLower = draft.url.trim().toLowerCase();
-	if (urlLower.includes(".m3u8")) {
-		return true;
-	}
-	const formatLower = draft.formatHint.trim().toLowerCase();
-	if (formatLower === "m3u8" || formatLower === "hls") {
-		return true;
-	}
-	const mimeLower = draft.mimeType.trim().toLowerCase();
-	if (mimeLower.includes("mpegurl") || mimeLower.includes("x-mpegurl")) {
-		return true;
-	}
-	return false;
+	return isSkippableHlsProbeTarget(draft);
 }
 
 export function buildVmafCandidates(

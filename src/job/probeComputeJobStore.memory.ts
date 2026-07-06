@@ -151,7 +151,18 @@ export function appendProbeCompareRendition(
 		return;
 	}
 	entry.compareRenditions.push(rendition);
-	entry.compareCompletedRenditions = entry.compareRenditions.length;
+	entry.compareCompletedRenditions += 1;
+}
+
+/**
+ * compare 阶段跳过 HLS rendition 时递增进度（不计入 renditions 列表）。
+ */
+export function incrementProbeCompareCompletedRenditions(jobId: string): void {
+	const entry = entryByJobId.get(jobId);
+	if (!entry) {
+		return;
+	}
+	entry.compareCompletedRenditions += 1;
 }
 
 export function setProbeComputeCompareResult(
@@ -164,7 +175,6 @@ export function setProbeComputeCompareResult(
 	}
 	entry.compareResult = compareResult;
 	entry.compareRenditions = compareResult.renditions.slice();
-	entry.compareCompletedRenditions = compareResult.renditions.length;
 }
 
 export function appendProbeVmafRow(jobId: string, row: IDevVideoCompressCompareVmafRow): void {

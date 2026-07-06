@@ -118,4 +118,68 @@ describe("runComparePhaseForJob", function () {
 		const entry = getProbeComputeJobMutableEntry(TEST_JOB_ID);
 		expect(entry?.compareCompletedRenditions).toBeLessThan(2);
 	});
+
+	it("skips m3u8 renditions without failing the job", async function () {
+		createProbeComputeJob({
+			jobId: TEST_JOB_ID,
+			nowMs: Date.now(),
+			request: {
+				schemaVersion: PROBE_COMPUTE_JOB_SCHEMA_VERSION,
+				jobKind: "compare",
+				caller: {
+					shopDomain: "shop.myshopify.com",
+					productId: "gid://shopify/Product/1",
+					videoId: "gid://shopify/Video/1",
+				},
+				compare: {
+					productName: "Demo Product",
+					renditions: [
+						{
+							group: "shopify",
+							label: "m3u8 · 1920×1080",
+							url: "https://cdn.example.com/master.m3u8",
+						},
+						{
+							group: "shopify",
+							label: "mp4 · 1280×720",
+							url: "https://cdn.example.com/video-720.mp4",
+						},
+					],
+				},
+			},
+		});
+		markProbeComputeJobRunning(TEST_JOB_ID, "compare", Date.now());
+
+		let probeCallCount = 0;
+		const compareResult = await runComparePhaseForJob(TEST_JOB_ID, {
+			config: PROBE_WORKER_DEFAULT_CONFIG,
+			probeVideoUrlMetadataFn: createMockProbeVideoUrlMetadata(async function countProbe(url) {
+				probeCallCount += 1;
+				return {
+					url,
+					width: 1280,
+					height: 720,
+					frameRateFps: 30,
+					bitrateKbps: 2000,
+					codec: "h264",
+					format: "mp4",
+					container: "mp4",
+					durationSeconds: 10,
+					sizeBytes: 1_000_000,
+				};
+			}),
+		});
+
+		expect(probeCallCount).toBe(1);
+		expect(compareResult.renditions).toHaveLength(1);
+		expect(compareResult.renditions[0]?.label).toBe("mp4 · 1280×720");
+
+		const snapshot = getProbeComputeJobSnapshot(
+			TEST_JOB_ID,
+			PROBE_WORKER_DEFAULT_CONFIG,
+			Date.now(),
+		);
+		expect(snapshot?.compareCompletedRenditions).toBe(2);
+		expect(snapshot?.compareTotalRenditions).toBe(2);
+	});
 });
