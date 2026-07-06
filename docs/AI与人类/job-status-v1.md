@@ -79,11 +79,11 @@ interface IProbeComputeJobStatus {
 
 ## unified job 阶段顺序
 
-1. `phase: "compare"` — 串行 ffprobe 各 rendition
+1. `phase: "compare"` — 并行 ffprobe 各 rendition（`maxFfprobeParallel`）；HLS 跳过；可重试后 skip 单档
 2. `phase: "vmaf"` — reference 下载 → 各 candidate 串行（V1 默认串行 libvmaf）
-3. `status: "ready"` — 两段均成功
+3. `status: "ready"` — compare 产出满足最小条件且 vmaf 段成功
 
-compare 失败 → 整 job `failed`，不进入 vmaf。
+compare 阶段 **failed**（不进入 vmaf）当：终态 0 条成功探针，或缺少必需的 SlimVID mapped 行。单档 shopify ffprobe 失败**不**再单独导致整 job failed（见 [job-spec-v1.md](./job-spec-v1.md) Compare 跳过与重试）。
 
 ---
 
@@ -119,8 +119,10 @@ Cancel 中途若某 candidate 已有 delivery/display 分数，partial row **保
 
 | 场景 | compare | vmaf |
 |------|---------|------|
-| 单 rendition ffprobe 失败 | 整 job failed | — |
+| HLS / m3u8 rendition | 跳过，不计入 `compareResult.renditions` | — |
+| 单 rendition ffprobe 失败（重试后） | 跳过该档；**job 仍可比继续** | — |
+| 0 条成功探针 / 缺 SlimVID 行 | 整 job failed | — |
 | reference 下载失败 | — | 整 job failed |
 | 单 candidate skip | — | 该行 skipped，job 仍 ready |
 
-`errorMessage` 面向人类可读，不含堆栈、完整 URL（含 query）。
+`errorMessage` 面向人类可读，不含堆栈、完整 URL（含 query）。ffprobe 类错误可含 **exit code** 与 stderr 截断。

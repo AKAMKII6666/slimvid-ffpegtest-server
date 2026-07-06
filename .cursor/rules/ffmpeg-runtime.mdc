@@ -22,10 +22,13 @@ alwaysApply: false
 
 ## ffprobe
 
-- 远程 URL：`-probesize` / `-analyzeduration` 限制读取；单 URL 超时（主 app 参考 45s）。
-- HEAD 取 `Content-Length` 等提示；失败语义与主 app `probeVideoUrlMetadata` 一致。
+- 远程 URL：`-probesize` / `-analyzeduration` 限制读取；单 URL 超时见 `probe.ffprobeTimeoutMs`（默认 45s）。
+- HEAD 取 `Content-Length` 等提示；失败返回结构化结果（`exitCode`、stderr 摘要），compare 日志 `phase: compare_probe_rendition`。
+- **Compare 阶段**：HLS/m3u8 跳过；其它 rendition 最多 3 次探针（间隔 500ms），仍失败则 skip 该档（见 [job-spec-v1.md](../../docs/AI与人类/job-spec-v1.md)）。
 
-## libvmaf
+## 下载（VMAF reference / candidate）
+
+- HTTPS 流式写入 tmp；默认**无字节上限**（仅 `probe.downloadTimeoutMs` 与磁盘）；单测可注入 `maxBytes`。
 
 - **metadata2go 对齐口径**：distorted upscale @ reference 编码分辨率（bicubic + setpts）；见 `buildVmafFfmpegFilterGraph.ts` `metadata2goBicubicUpscale`。
 - CPU：`libvmaf`；GPU 请求时 `libvmaf_cuda` + `scale_cuda` upscale 链（见 [configuration.md](../../docs/AI与人类/configuration.md)）。

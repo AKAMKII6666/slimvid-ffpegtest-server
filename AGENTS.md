@@ -28,6 +28,7 @@
 |------|------|
 | 创建 job | POST body 含 URL 列表与 job 类型（compare / vmaf / unified） |
 | Poll | GET status；running 可返回 partial rows |
+| Compare | HLS 跳过；ffprobe 失败可重试后 skip 单档；缺 SlimVID 或 0 条成功 → compare failed |
 | Cancel | 不可逆；SIGKILL ffmpeg + abort 下载；已有分数可写 partial report |
 
 **Cancel 契约：** `cancelled: true` 后 worker 不得 commit 终态为 ready、不得复活 job。

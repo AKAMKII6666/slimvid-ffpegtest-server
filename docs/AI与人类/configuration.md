@@ -76,7 +76,7 @@ npm start
 | `screenshots.maxSegmentsPerMode` | number | `3` | cap |
 | `screenshots.keySegment` | string | `"dev-vmaf-probe"` | R2 key 路径段 |
 | `probe.ffprobeTimeoutMs` | number | `45000` | 单 URL ffprobe |
-| `probe.downloadTimeoutMs` | number | `300000` | 单文件下载 |
+| `probe.downloadTimeoutMs` | number | `300000` | 单文件下载（**无默认字节上限**；dev worker 不设 `maxBytes`） |
 | `ffmpeg.ffmpegPath` | string | `"ffmpeg"` | 可执行文件 |
 | `ffmpeg.ffprobePath` | string | `"ffprobe"` | 可执行文件 |
 | `job.clientJobTtlMs` | number | `600000` | 幂等 TTL |
@@ -133,7 +133,7 @@ npm start
 
 - 路径：`.probeWorkerPinoLogs/app/YYYY-MM-DD.log`（相对进程 cwd）
 - 控制台与落盘 **同内容**；HTTP access log 与 job phase log 均落盘
-- VMAF ffmpeg 失败时 log 含 `ffmpegStderrExcerpt`（截断）；**禁止** log 完整 CDN URL
+- VMAF ffmpeg 失败时 log 含 `ffmpegStderrExcerpt`（截断）；compare ffprobe 失败时 log 含 `exitCode` / stderr 摘要（`phase: compare_probe_rendition`）；**禁止** log 完整 CDN URL
 
 ---
 

@@ -105,9 +105,23 @@ job spec 内 URL 仅校验 **`https:` scheme** 与基本 URL 形态；**不做**
 
 ---
 
-## D14 — Compare 失败粒度 V1 严格
+## D14 — Compare 失败粒度（worker 2026-07 修订）
 
-任一 rendition ffprobe 失败 → compare 阶段 **failed**（与主 app 一致）。
+**本 worker（remote compare）** 与主 app **本机** compare 的严格「全有或全失败」**有意区分**：
+
+| 条件 | worker compare |
+|------|----------------|
+| HLS / m3u8 | 跳过 |
+| 其它 rendition ffprobe 失败 | 每档最多 3 次（间隔 500ms）；仍失败则**跳过该档** |
+| 终态 0 条成功 / 缺 SlimVID mapped | compare **failed** |
+
+主 app `SLIMVID_DEV_PROBE_BACKEND=local` 仍保持单档失败即整探针失败；仅 **remote worker** 路径采用上表。详见 [job-spec-v1.md](./job-spec-v1.md)。
+
+---
+
+## D17 — VMAF 下载无默认字节上限（worker 2026-07）
+
+dev probe worker 流式下载 reference / candidate 时**不设** `maxBytes`（原 500MB 默认已移除）。仍受 `probe.downloadTimeoutMs` 与磁盘空间约束。与主 app 商家上传路径 `SLIMVID_INFRA_MAX_UPLOAD_BYTES` **无关**。reference 下载失败仍导致整 job **failed**。
 
 ---
 

@@ -85,14 +85,15 @@ GPU（`libvmaf_cuda`）单独里程碑，不挡上表：✅
 | ✅ | R3.1 | `src/types/devVideoCompare.types.ts` mirror | `npm run typecheck` |
 | ✅ | R3.2 | 移植 `probeVideoUrlMetadata`（对照主 app `probeVideoUrlMetadata.server.ts`） | `npm run test -- tests/domain/probe/probeVideoUrlMetadata.test.ts` |
 | ✅ | R3.3 | compare executor：并行 ffprobe（`maxFfprobeParallel`） | `npm run test -- tests/job/runComparePhaseForJob.test.ts` |
-| ✅ | R3.4 | **任一** rendition ffprobe 失败 → compare `failed`（整 job failed） | `npm run test -- tests/job/runComparePhaseForJob.test.ts` |
-| ✅ | R3.5 | running poll：`compare.completedRenditions` / `totalRenditions` 递增 | `npm run test -- tests/http/jobsRoutes.test.ts` |
+| ✅ | R3.4 | compare：HLS 跳过；ffprobe 重试；单档失败 skip；0 条/缺 SlimVID → failed | `npm run test -- tests/job/runComparePhaseForJob.test.ts` |
+| ✅ | R3.5 | running poll：`compare.completedRenditions` / `totalRenditions` 递增（含 skip） | `npm run test -- tests/http/jobsRoutes.test.ts` |
 | ✅ | R3.6 | 终态 `compareResult`（仅 `renditions[]`，**无** comparisons/notes） | 字段对齐 [job-spec-v1.md](./job-spec-v1.md) |
 | ✅ | R3.7 | 接入 `jobKind: compare`；`unified` 仅跑 compare 段（vmaf 仍 mock 或 skip） | 手动 unified poll `phase` |
-| ✅ | R3.8 | ffprobe 超时（`probe.ffprobeTimeoutMs`）→ failed | `npm run test -- tests/domain/probe/probeVideoUrlMetadata.test.ts` |
+| ✅ | R3.8 | ffprobe 超时 / 执行失败 → 重试后 skip 或 compare failed | `npm run test -- tests/domain/probe/probeVideoUrlMetadata.test.ts` |
 | ⬜ | R3.9 | 集成冒烟：对公网 `https:` 短视频 URL ffprobe（可选，CI 可 skip） | 手动 |
+| ✅ | R3.10 | ffprobe 结构化错误；VMAF 下载无默认字节上限 | `npm run test -- tests/domain/probe/runFfprobeOnVideoUrl.test.ts` |
 
-**R3 批末：** `jobKind: compare` 真实 ffprobe 可 `ready`；单 URL 失败整 job `failed`。
+**R3 批末：** `jobKind: compare` 真实 ffprobe 可 `ready`；单档可 skip；全失败或缺 SlimVID 时 compare `failed`。
 
 ---
 
@@ -139,6 +140,7 @@ GPU（`libvmaf_cuda`）单独里程碑，不挡上表：✅
 
 | 日期 | 轮次 | 已完成 ID | 备注 |
 |------|------|-----------|------|
+| 2026-07-06 | R3+ | compare 韧性 | HLS skip、ffprobe 重试/skip、结构化错误、VMAF 下载无字节上限；文档 D14 修订 |
 | 2026-07-02 | GPU | libvmaf_cuda | filter graph + hwaccel + health fail 策略、82 tests |
 | 2026-07-02 | R5 | R5.1–R5.8 | R2 截图 sub-75、enrich 接线、75 tests |
 | 2026-07-02 | R4 | R4.1–R4.13 | 真实 VMAF 阶段、61 tests |

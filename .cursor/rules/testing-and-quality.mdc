@@ -36,6 +36,7 @@ alwaysApply: true
 以下区域修改时必须优先增加契约测试：
 
 - Job 创建 / poll / cancel 状态机与终态语义（含 partial report）。
+- compare rendition skip / 重试 / ffprobe 错误语义（与主 app local 差异见 [decisions.md](./decisions.md) D14）。
 - **https URL scheme** 校验与 SSRF 防护（Bearer 鉴权 + 仅 https，无 CDN 域名白名单）。
 - ffprobe JSON → 元数据映射。
 - libvmaf JSON → mean / 逐帧 analytics 解析。

@@ -1,7 +1,7 @@
 > **文档层级：** AI与人类
 > **状态：** 已对齐（协议 v1）
 > **读者：** 工程 | 联调
-> **记录于：** 2026-07-02
+> **记录于：** 2026-07-02（compare skip / ffprobe 重试：2026-07-06）
 > **关联主应用：** [slimvid-shopify-app](../../../slimvid-shopify-app) · [dev-video-compress-compare.md](../../../slimvid-shopify-app/docs/AI与人类/工程/前端/dev-video-compress-compare.md)
 
 # Dev Probe Compute Worker — 文档索引

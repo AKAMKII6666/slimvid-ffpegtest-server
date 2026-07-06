@@ -68,7 +68,20 @@ Worker 在 job 完成 compare 阶段后返回 **probe 后的 rendition 元数据
 
 **不在 worker 计算：** `comparisons[]`、`notes[]` — 由主 app 用现有 `computeDevVideoCompressCompareDerived` 组装完整 `IDevVideoCompressCompareReport`（见 [decisions.md](./decisions.md)）。
 
-任一 rendition ffprobe 失败 → 整个 compare 阶段 `failed`（与主 app compare BFF「全有或全失败」一致）。
+### Compare 跳过与重试（worker，2026-07）
+
+与主 app **本机** compare（`buildDevVideoCompressCompareReportLocal`）的「单档失败即整探针失败」**有意区分**：远程 worker 面向 dev 批跑，允许**部分 rendition** 缺失，只要仍能产出主 app 所需的最小报告。
+
+| 条件 | 行为 | 日志 `skipReason` / 备注 |
+|------|------|-------------------------|
+| HLS / m3u8（URL 或 label） | 不 ffprobe，不进 `compareResult.renditions` | `hls` |
+| ffprobe 失败（含超时） | 每档最多 **3 次**（间隔 **500ms**）；仍失败则跳过该档 | `ffprobe_failed`；日志含 `exitCode` / stderr 摘要 |
+| 终态 0 条成功探针 | compare 阶段 **failed** | `errorMessage` 含 `probed zero renditions` |
+| spec 含 `group: "slimvid"` 但无 SlimVID 成功行 | compare 阶段 **failed** | `missing required SlimVID (mapped) rendition` |
+
+`compare.completedRenditions` / `totalRenditions`：跳过档与成功档均计入 **completed**（与 VMAF candidate 进度语义一致）。
+
+ffprobe 失败时 `errorMessage` / 日志优先暴露 **exit code** 与 **stderr 截断**，不再使用笼统的 “ensure ffprobe is installed” 文案（除非二进制确实未找到）。
 
 ---
 
@@ -110,7 +123,7 @@ interface IProbeComputeVmafSpec {
 
 R2 未配置 → `frameAnalytics` 仍有 segment 统计；`screenshotsSkippedReason: "r2_not_configured"`。
 
-### Skip 规则（与主 app 一致）
+### Skip 规则（VMAF candidate；与主 app 一致）
 
 | 条件 | skipReason |
 |------|------------|
@@ -121,6 +134,12 @@ R2 未配置 → `frameAnalytics` 仍有 segment 统计；`screenshotsSkippedRea
 | mean 与 harmonicMean 均为 null | `vmaf_failed` |
 
 单 candidate skip **不**导致整 job failed（与主 app VMAF worker 一致）。
+
+### VMAF 下载（worker）
+
+- HTTPS 流式写入系统 tmp；受 `probe.downloadTimeoutMs`（默认 5min）与磁盘空间约束。
+- **默认无字节上限**（dev 探针服务不设 `maxBytes`；与主 app 商家路径 `SLIMVID_INFRA_MAX_UPLOAD_BYTES` 无关）。
+- reference 下载失败 → 整 job **failed**（与 VMAF 契约一致）。
 
 ### VMAF 算法（2026-07 硬切换）
 

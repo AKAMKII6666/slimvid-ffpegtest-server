@@ -129,14 +129,15 @@ GPU（`libvmaf_cuda`）可在 R4 之后单独里程碑，不挡 R1–R6。
 | R3.1 | `src/types/devVideoCompare.types.ts` mirror | typecheck |
 | R3.2 | 移植 `probeVideoUrlMetadata`（对照 `probeVideoUrlMetadata.server.ts`） | Vitest 样本 JSON |
 | R3.3 | compare executor：并行 ffprobe（`maxFfprobeParallel`） | Vitest 并发上限 |
-| R3.4 | **任一** rendition ffprobe 失败 → compare `failed`（整 job failed） | Vitest |
-| R3.5 | running poll：`compare.completedRenditions` / `totalRenditions` 递增 | Vitest |
+| R3.4 | compare：HLS 跳过；ffprobe 重试 3 次；仍失败 skip 单档；0 条或缺 SlimVID → failed | Vitest |
+| R3.5 | running poll：`compare.completedRenditions` / `totalRenditions` 递增（含 skip） | Vitest |
 | R3.6 | 终态 `compareResult`（仅 `renditions[]`，**无** comparisons/notes） | 字段对齐 [job-spec-v1.md](./job-spec-v1.md) |
 | R3.7 | 接入 `jobKind: compare`；`unified` 仅跑 compare 段（vmaf 仍 mock 或 skip） | 手动 unified poll `phase` |
-| R3.8 | ffprobe 超时（`probe.ffprobeTimeoutMs`）→ failed | Vitest |
+| R3.8 | ffprobe 超时（`probe.ffprobeTimeoutMs`）→ 该档重试后 skip 或 compare failed | Vitest |
 | R3.9 | 集成冒烟：对公网 `https:` 短视频 URL ffprobe（可选，CI 可 skip） | 手动 |
+| R3.10 | ffprobe 结构化错误（exit code / stderr 摘要）；VMAF 下载无默认字节上限 | Vitest |
 
-**R3 完成标准：** `jobKind: compare` 真实 ffprobe 可 `ready`；单 URL 失败整 job `failed`；poll 进度字段正确。
+**R3 完成标准：** `jobKind: compare` 真实 ffprobe 可 `ready`；单档失败可 skip；全失败或缺 SlimVID 时 compare `failed`；poll 进度字段正确。
 
 ---
 

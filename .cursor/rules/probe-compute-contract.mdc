@@ -16,6 +16,8 @@ alwaysApply: false
 - 安全：Bearer + **https URL only**（无 CDN 域名白名单）
 - 队列：POST 永远 **pending** 入队，无 `worker_busy`
 - R2 截图：**V1 默认开启**；R2 未配置 → `r2_not_configured`，不 fail job
+- **Compare**：HLS skip；ffprobe 重试后单档 skip；详见 [job-spec-v1.md](../../docs/AI与人类/job-spec-v1.md)
+- **VMAF 下载**：默认无字节上限（仅 timeout + 磁盘）；见 [job-spec-v1.md](../../docs/AI与人类/job-spec-v1.md) § VMAF 下载
 - 类型：本仓 `src/types/` mirror；**禁止** import 主 app
 - 配置：[configuration.md](../../docs/AI与人类/configuration.md)
 - 实施：[implementation-plan.md](../../docs/AI与人类/implementation-plan.md)

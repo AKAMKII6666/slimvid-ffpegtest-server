@@ -61,6 +61,15 @@ Browser (Dashboard dev)
 4. **cancelRemoteJob** — 含 `pending` job
 5. **mapToBffResponse** — renditions + 本机 derived → compare report；vmafReport 透传
 
+### Compare 语义（remote vs local）
+
+| 路径 | 单档 ffprobe 失败 |
+|------|-------------------|
+| **Worker remote** | 重试后 **skip** 该档；`compareResult.renditions` 可为 spec 的子集（见 [job-spec-v1.md](./job-spec-v1.md)） |
+| **主 app local** | 整探针 **失败**（全有或全失败） |
+
+主 app `computeDevVideoCompressCompareDerived` 对缺失 shopify 档仍可组装 report（对比行减少）；**必须**仍有 SlimVID mapped 行。
+
 ### jobId 映射
 
 | ID | 持有者 |
