@@ -117,12 +117,37 @@ describe("probeVideoUrlMetadata", function () {
 				};
 			},
 			runFfprobe: async function mockFfprobe() {
-				return COMPLETE_FFPROBE_PAYLOAD;
+				return {
+					ok: true as const,
+					payload: COMPLETE_FFPROBE_PAYLOAD,
+				};
 			},
 		});
 
 		expect(metadata.width).toBe(1280);
 		expect(metadata.container).toBe("mp4");
+	});
+
+	it("surfaces ffprobe exec errors with exit code", async function () {
+		await expect(
+			probeVideoUrlMetadata("https://cdn.example.com/video.mp4", {
+				fetchHead: async function mockHead() {
+					return {
+						sizeBytes: 10_485_760,
+						contentType: "video/mp4",
+						contentDisposition: "",
+					};
+				},
+				runFfprobe: async function mockFfprobeFailed() {
+					return {
+						ok: false as const,
+						reason: "exec_failed" as const,
+						exitCode: 1,
+						stderrExcerpt: "HTTP error 403 Forbidden",
+					};
+				},
+			}),
+		).rejects.toThrow(/exit 1/);
 	});
 
 	it("throws when ffprobe times out", async function () {

@@ -1,11 +1,15 @@
 /**
  * 模块名称：ffprobe 子进程执行
- * 模块说明：可注入 execFile，供单测 mock。
+ * 模块说明：可注入 execFile；返回结构化成功/失败（含 stderr 摘要）。
  */
 
 import { execFile as nodeExecFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import {
+	extractFfprobeExecFailureDetails,
+	type TFfprobeRunResult,
+} from "./ffprobeRunResult.types.js";
 import type { IFfprobeJsonPayload } from "./ffprobeParse.helpers.js";
 import { assertProbeNotAborted, PROBE_ABORTED_ERROR } from "./fetchVideoUrlHeadHints.js";
 
@@ -30,7 +34,7 @@ export interface IRunFfprobeOnVideoUrlOptions {
 export async function runFfprobeOnVideoUrl(
 	url: string,
 	options: IRunFfprobeOnVideoUrlOptions,
-): Promise<IFfprobeJsonPayload | null> {
+): Promise<TFfprobeRunResult> {
 	assertProbeNotAborted(options.signal);
 
 	const execFileAsync = options.execFileAsync ?? defaultExecFileAsync;
@@ -59,16 +63,42 @@ export async function runFfprobeOnVideoUrl(
 		);
 		const stdout = typeof result.stdout === "string" ? result.stdout : result.stdout.toString("utf8");
 		if (stdout.trim() === "") {
-			return null;
+			const stderrRaw =
+				typeof result.stderr === "string" ? result.stderr : result.stderr.toString("utf8");
+			return {
+				ok: false,
+				reason: "empty_output",
+				stderrExcerpt: stderrRaw.trim() !== "" ? stderrRaw.trim().slice(0, 500) : undefined,
+			};
 		}
-		const parsed = JSON.parse(stdout) as IFfprobeJsonPayload;
-		return parsed;
+
+		let parsed: IFfprobeJsonPayload;
+		try {
+			parsed = JSON.parse(stdout) as IFfprobeJsonPayload;
+		} catch {
+			return {
+				ok: false,
+				reason: "invalid_json",
+			};
+		}
+
+		return {
+			ok: true,
+			payload: parsed,
+		};
 	} catch (error: unknown) {
 		assertProbeNotAborted(options.signal);
 		if (error instanceof Error && error.message.includes("ETIMEDOUT")) {
 			throw new Error(`ffprobe timed out after ${options.timeoutMs}ms`);
 		}
-		return null;
+
+		const details = extractFfprobeExecFailureDetails(error);
+		return {
+			ok: false,
+			reason: details.isNotFound ? "ffprobe_not_found" : "exec_failed",
+			exitCode: details.exitCode,
+			stderrExcerpt: details.stderrExcerpt,
+		};
 	}
 }
 

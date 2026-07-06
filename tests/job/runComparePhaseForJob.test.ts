@@ -4,7 +4,6 @@ import { PROBE_WORKER_DEFAULT_CONFIG } from "@worker/config/defaults.js";
 import { runComparePhaseForJob } from "@worker/job/runComparePhaseForJob.js";
 import {
 	createProbeComputeJob,
-	getProbeComputeJobMutableEntry,
 	getProbeComputeJobSnapshot,
 	markProbeComputeJobRunning,
 	resetProbeComputeJobStoreForTests,
@@ -89,34 +88,85 @@ describe("runComparePhaseForJob", function () {
 		expect(snapshot?.compareResult).not.toHaveProperty("comparisons");
 	});
 
-	it("fails entire job when any rendition probe throws", async function () {
+	it("skips failed rendition after retries and keeps successful rows", async function () {
+		seedCompareJob(2);
+		let attemptsOnVideo2 = 0;
+
+		const compareResult = await runComparePhaseForJob(TEST_JOB_ID, {
+			config: PROBE_WORKER_DEFAULT_CONFIG,
+			probeVideoUrlMetadataFn: createMockProbeVideoUrlMetadata(async function failSecond(url) {
+				if (url.includes("video-2")) {
+					attemptsOnVideo2 += 1;
+					throw new Error("ffprobe unreachable");
+				}
+				return {
+					url,
+					width: 1280,
+					height: 720,
+					frameRateFps: 30,
+					bitrateKbps: 2000,
+					codec: "h264",
+					format: "mp4",
+					container: "mp4",
+					durationSeconds: 10,
+					sizeBytes: 1_000_000,
+				};
+			}),
+		});
+
+		expect(attemptsOnVideo2).toBe(3);
+		expect(compareResult.renditions).toHaveLength(1);
+		expect(compareResult.renditions[0]?.label).toBe("Rendition 1");
+
+		const snapshot = getProbeComputeJobSnapshot(
+			TEST_JOB_ID,
+			PROBE_WORKER_DEFAULT_CONFIG,
+			Date.now(),
+		);
+		expect(snapshot?.compareCompletedRenditions).toBe(2);
+	});
+
+	it("retries transient probe failures before succeeding", async function () {
+		seedCompareJob(1);
+		let attempts = 0;
+
+		const compareResult = await runComparePhaseForJob(TEST_JOB_ID, {
+			config: PROBE_WORKER_DEFAULT_CONFIG,
+			probeVideoUrlMetadataFn: createMockProbeVideoUrlMetadata(async function failTwice(url) {
+				attempts += 1;
+				if (attempts < 3) {
+					throw new Error("transient ffprobe error");
+				}
+				return {
+					url,
+					width: 1280,
+					height: 720,
+					frameRateFps: 30,
+					bitrateKbps: 2000,
+					codec: "h264",
+					format: "mp4",
+					container: "mp4",
+					durationSeconds: 10,
+					sizeBytes: 1_000_000,
+				};
+			}),
+		});
+
+		expect(attempts).toBe(3);
+		expect(compareResult.renditions).toHaveLength(1);
+	});
+
+	it("fails when every rendition is skipped or probe fails", async function () {
 		seedCompareJob(2);
 
 		await expect(
 			runComparePhaseForJob(TEST_JOB_ID, {
 				config: PROBE_WORKER_DEFAULT_CONFIG,
-				probeVideoUrlMetadataFn: createMockProbeVideoUrlMetadata(async function failSecond(url) {
-					if (url.includes("video-2")) {
-						throw new Error("ffprobe unreachable");
-					}
-					return {
-						url,
-						width: 1280,
-						height: 720,
-						frameRateFps: 30,
-						bitrateKbps: 2000,
-						codec: "h264",
-						format: "mp4",
-						container: "mp4",
-						durationSeconds: 10,
-						sizeBytes: 1_000_000,
-					};
+				probeVideoUrlMetadataFn: createMockProbeVideoUrlMetadata(async function alwaysFail() {
+					throw new Error("ffprobe unreachable");
 				}),
 			}),
-		).rejects.toThrow(/unreachable/i);
-
-		const entry = getProbeComputeJobMutableEntry(TEST_JOB_ID);
-		expect(entry?.compareCompletedRenditions).toBeLessThan(2);
+		).rejects.toThrow(/probed zero renditions/i);
 	});
 
 	it("skips m3u8 renditions without failing the job", async function () {

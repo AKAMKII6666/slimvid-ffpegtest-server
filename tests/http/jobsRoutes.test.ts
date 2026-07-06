@@ -296,7 +296,7 @@ describe("jobs routes", function () {
 		await app.close();
 	});
 
-	it("marks compare job failed when probe throws", async function () {
+	it("marks compare job failed when every rendition probe fails", async function () {
 		const failingProbe = createMockProbeVideoUrlMetadata(async function failProbe() {
 			throw new Error("ffprobe failed");
 		});
@@ -323,9 +323,10 @@ describe("jobs routes", function () {
 		const createdBody = created.json() as { data: { jobId: string } };
 
 		let finalStatus = "pending";
-		for (let attempt = 0; attempt < 20; attempt += 1) {
+		let errorMessage = "";
+		for (let attempt = 0; attempt < 80; attempt += 1) {
 			await new Promise(function wait(resolve): void {
-				setTimeout(resolve, 10);
+				setTimeout(resolve, 25);
 			});
 			const polled = await app.inject({
 				method: "GET",
@@ -334,13 +335,14 @@ describe("jobs routes", function () {
 			});
 			const body = polled.json() as { data: { status: string; errorMessage?: string } };
 			finalStatus = body.data.status;
+			errorMessage = body.data.errorMessage ?? "";
 			if (finalStatus === "failed") {
-				expect(body.data.errorMessage).toMatch(/ffprobe failed/i);
 				break;
 			}
 		}
 
 		expect(finalStatus).toBe("failed");
+		expect(errorMessage).toMatch(/probed zero renditions/i);
 		await app.close();
 	});
 
@@ -380,9 +382,9 @@ describe("jobs routes", function () {
 			};
 		} = { data: { status: "pending" } };
 
-		for (let attempt = 0; attempt < 20; attempt += 1) {
+		for (let attempt = 0; attempt < 80; attempt += 1) {
 			await new Promise(function wait(resolve): void {
-				setTimeout(resolve, 10);
+				setTimeout(resolve, 25);
 			});
 			const polled = await app.inject({
 				method: "GET",

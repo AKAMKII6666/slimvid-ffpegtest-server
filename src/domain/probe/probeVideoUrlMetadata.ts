@@ -13,6 +13,10 @@ import {
 	type IProbedVideoUrlMetadata,
 } from "./ffprobeParse.helpers.js";
 import {
+	formatFfprobeProbeErrorMessage,
+	type TFfprobeRunResult,
+} from "./ffprobeRunResult.types.js";
+import {
 	runFfprobeOnVideoUrl,
 	type TExecFileAsync,
 } from "./runFfprobeOnVideoUrl.js";
@@ -62,21 +66,19 @@ export async function probeVideoUrlMetadata(
 	);
 	assertProbeNotAborted(signal);
 
-	const ffprobePayload = await runFfprobe(trimmedUrl, {
+	const ffprobeResult: TFfprobeRunResult = await runFfprobe(trimmedUrl, {
 		ffprobePath: options.ffprobePath,
 		timeoutMs: options.ffprobeTimeoutMs ?? 45_000,
 		signal,
 		execFileAsync: options.execFileAsync,
 	});
-	if (!ffprobePayload) {
-		throw new Error(
-			"ffprobe failed — ensure ffprobe is installed and the URL is reachable from the worker",
-		);
+	if (!ffprobeResult.ok) {
+		throw new Error(formatFfprobeProbeErrorMessage(ffprobeResult));
 	}
 
 	const metadata = parseFfprobeJsonToMetadata(
 		trimmedUrl,
-		ffprobePayload,
+		ffprobeResult.payload,
 		headHints.sizeBytes,
 		headHints,
 	);
