@@ -49,6 +49,56 @@ describe("streamDownloadToTempFile", function () {
 		}
 	});
 
+	it("does not limit download size by default", async function () {
+		const body = "x".repeat(512);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async function (): Promise<Response> {
+				return new Response(body, {
+					status: 200,
+					headers: {
+						"Content-Type": "video/mp4",
+					},
+				});
+			}),
+		);
+
+		const result = await streamDownloadToTempFile("https://cdn.example.com/large.mp4", {
+			timeoutMs: 30_000,
+		});
+
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.fileSize).toBe(512);
+			await result.cleanup();
+		}
+	});
+
+	it("enforces maxBytes only when explicitly set", async function () {
+		const body = "x".repeat(512);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async function (): Promise<Response> {
+				return new Response(body, {
+					status: 200,
+					headers: {
+						"Content-Type": "video/mp4",
+					},
+				});
+			}),
+		);
+
+		const result = await streamDownloadToTempFile("https://cdn.example.com/large.mp4", {
+			timeoutMs: 30_000,
+			maxBytes: 128,
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toBe("Download body too large");
+		}
+	});
+
 	it("aborts when external signal aborts", async function () {
 		const controller = new AbortController();
 		vi.stubGlobal(

@@ -1,6 +1,6 @@
 /**
  * 模块名称：流式下载至临时文件
- * 模块说明：将远程 https URL pipeline 写入磁盘；支持 timeout / abort / maxBytes。
+ * 模块说明：将远程 https URL pipeline 写入磁盘；支持 timeout / abort；可选 maxBytes（默认无上限）。
  */
 
 import { createWriteStream } from "node:fs";
@@ -16,9 +16,6 @@ import { mergeAbortSignals } from "../http/mergeAbortSignals.js";
 
 /** 默认下载超时（毫秒） */
 export const STREAM_DOWNLOAD_DEFAULT_TIMEOUT_MS = 5 * 60_000;
-
-/** 默认下载字节上限（500 MiB） */
-export const STREAM_DOWNLOAD_DEFAULT_MAX_BYTES = 500 * 1024 * 1024;
 
 export interface IStreamDownloadToTempFileOk {
 	ok: true;
@@ -39,6 +36,7 @@ export type TStreamDownloadToTempFileResult = IStreamDownloadToTempFileOk | IStr
 export interface IStreamDownloadToTempFileOptions {
 	signal?: AbortSignal;
 	timeoutMs?: number;
+	/** 显式传入时才限制下载体积；dev worker 默认不设上限 */
 	maxBytes?: number;
 	fetchFn?: typeof fetch;
 }
@@ -113,9 +111,7 @@ export async function streamDownloadToTempFile(
 
 	const filePath = join(tempDir, "artifact");
 	const maxBytes =
-		typeof options?.maxBytes === "number" && options.maxBytes > 0
-			? options.maxBytes
-			: STREAM_DOWNLOAD_DEFAULT_MAX_BYTES;
+		typeof options?.maxBytes === "number" && options.maxBytes > 0 ? options.maxBytes : null;
 	const abort = resolveStreamDownloadAbortSignal(options);
 	const fetchFn = options?.fetchFn ?? fetch;
 
@@ -150,8 +146,13 @@ export async function streamDownloadToTempFile(
 	let nodeReadable: Readable | null = null;
 	try {
 		nodeReadable = Readable.fromWeb(response.body as import("stream/web").ReadableStream);
-		const byteMonitor = createMaxBytesMonitorTransform(maxBytes);
-		await pipeline(nodeReadable, byteMonitor, createWriteStream(filePath));
+		const writeStream = createWriteStream(filePath);
+		if (maxBytes !== null) {
+			const byteMonitor = createMaxBytesMonitorTransform(maxBytes);
+			await pipeline(nodeReadable, byteMonitor, writeStream);
+		} else {
+			await pipeline(nodeReadable, writeStream);
+		}
 	} catch (err: unknown) {
 		if (nodeReadable !== null) {
 			nodeReadable.destroy();
